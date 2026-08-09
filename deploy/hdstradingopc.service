@@ -1,0 +1,58 @@
+# systemd unit for the HDS Trading OPC website.
+#
+# Install:
+#   sudo cp deploy/hdstradingopc.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hdstradingopc
+#
+# Check on it:
+#   sudo systemctl status hdstradingopc
+#   sudo journalctl -u hdstradingopc -f
+
+[Unit]
+Description=HDS Trading OPC website (hdstradingopc.com)
+Documentation=https://hdstradingopc.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hds
+Group=hds
+WorkingDirectory=/var/www/hdstradingopc
+
+# Secrets live in this file, readable only by the service user:
+#   sudo chown hds:hds /var/www/hdstradingopc/.env
+#   sudo chmod 600 /var/www/hdstradingopc/.env
+EnvironmentFile=/var/www/hdstradingopc/.env
+Environment=NODE_ENV=production
+
+ExecStart=/usr/bin/node server/dist/index.js
+
+# Restart on crash, but back off so a boot-time misconfiguration does not spin.
+Restart=always
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hdstradingopc
+
+# --- Hardening -------------------------------------------------------------
+# The process only ever needs to read its own code and write its database.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/hdstradingopc/server/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target

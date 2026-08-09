@@ -1,0 +1,286 @@
+# Deploying hdstradingopc.com on IONOS
+
+This site is a Node.js application with its own database. It needs a server that
+can **run Node** — an IONOS **VPS** or **Cloud Server**.
+
+> **Important:** IONOS *Web Hosting* (the shared plan for WordPress and PHP)
+> cannot run this site. It serves PHP and static files only, so there would be
+> no API, no online payments, no bookings and no admin panel. If you are
+> currently on a Web Hosting plan, you need to add a VPS. The smallest one
+> (VPS S — 1 vCPU, 2 GB RAM) is enough to start.
+
+Everything below is a one-time setup of roughly 30–45 minutes.
+
+---
+
+## 1. Point the domain at your server
+
+In the IONOS control panel, open **Domains & SSL → hdstradingopc.com → DNS**.
+
+Set these two records to your VPS's IPv4 address (shown in **Servers & Cloud**):
+
+| Type | Host name | Points to        | TTL      |
+| ---- | --------- | ---------------- | -------- |
+| A    | `@`       | `203.0.113.10`   | 1 hour   |
+| A    | `www`     | `203.0.113.10`   | 1 hour   |
+
+Replace `203.0.113.10` with your real server IP. Delete any existing A or CNAME
+records for `@` and `www` that point somewhere else, or they will conflict.
+
+DNS changes usually take effect within an hour. Check with:
+
+```bash
+dig +short hdstradingopc.com
+```
+
+Do not continue to the TLS step until that returns your server's IP.
+
+---
+
+## 2. Prepare the server
+
+SSH in as root using the credentials from the IONOS panel:
+
+```bash
+ssh root@203.0.113.10
+```
+
+Install Node.js 22, nginx and certbot:
+
+```bash
+apt update && apt upgrade -y
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs nginx certbot python3-certbot-nginx git build-essential
+
+node -v    # should print v22.x
+```
+
+`build-essential` is needed because the database driver compiles a native
+module during install.
+
+Create a dedicated user so the website never runs as root:
+
+```bash
+adduser --system --group --home /var/www/hdstradingopc hds
+```
+
+---
+
+## 3. Get the code onto the server
+
+```bash
+cd /var/www
+git clone https://github.com/hdstrading/official-website-hds.git hdstradingopc
+cd hdstradingopc
+chown -R hds:hds /var/www/hdstradingopc
+```
+
+---
+
+## 4. Configure it
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Fill in at minimum:
+
+- `SITE_URL=https://hdstradingopc.com`
+- `ADMIN_PASSWORD` — generate one with `openssl rand -base64 24`
+- `SESSION_SECRET` — generate one with `openssl rand -hex 32`
+- `ADMIN_PATH` **and** `VITE_ADMIN_PATH` — the same secret value in both
+- `DATABASE_FILE=/var/www/hdstradingopc/server/data/hds.db`
+
+The site runs without the payment, email and courier keys — it simply hides the
+features they power. You can add them later and restart.
+
+Lock the file down, since it holds your passwords:
+
+```bash
+chown hds:hds .env && chmod 600 .env
+```
+
+---
+
+## 5. Build and start
+
+```bash
+npm ci
+npm run build
+mkdir -p server/data && chown -R hds:hds server/data
+
+cp deploy/hdstradingopc.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now hdstradingopc
+systemctl status hdstradingopc
+```
+
+You should see `active (running)`. Confirm the app is answering:
+
+```bash
+curl localhost:4000/api/health
+# {"status":"ok","time":"..."}
+```
+
+On first start the database is created and filled with the starting catalog.
+
+---
+
+## 6. Put nginx in front and switch on HTTPS
+
+```bash
+cp deploy/nginx.conf /etc/nginx/sites-available/hdstradingopc
+ln -s /etc/nginx/sites-available/hdstradingopc /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+mkdir -p /var/www/certbot
+
+nginx -t && systemctl reload nginx
+```
+
+The supplied config already references certificate paths, so nginx will not
+start cleanly until the certificate exists. Get it now:
+
+```bash
+certbot --nginx -d hdstradingopc.com -d www.hdstradingopc.com
+```
+
+Certbot obtains the certificate, wires it in and sets up automatic renewal.
+Check renewal works:
+
+```bash
+certbot renew --dry-run
+```
+
+Open **https://hdstradingopc.com** — the site should load over HTTPS.
+
+---
+
+## 7. Turn on online payments
+
+1. Create an account at [dashboard.paymongo.com](https://dashboard.paymongo.com)
+   and complete business verification (they will ask for your SEC registration
+   and BIR documents).
+2. Copy your **secret** and **public** keys into `.env`.
+3. In the PayMongo dashboard create a webhook:
+   - **URL:** `https://hdstradingopc.com/api/webhooks/paymongo`
+   - **Event:** `checkout_session.payment.paid`
+4. Copy the webhook's signing secret into `PAYMONGO_WEBHOOK_SECRET`.
+5. Restart: `systemctl restart hdstradingopc`
+
+Card, GCash, Maya and online bank transfer now appear at checkout.
+
+**Test with `sk_test_` keys first.** Place a test order and confirm it flips to
+"Paid" on the order page. An order only becomes paid when the webhook arrives —
+if the webhook secret is wrong, payments will be taken but never recorded, so
+verify this before going live.
+
+---
+
+## 8. Turn on email
+
+Confirmations are sent over SMTP. For a Gmail or Google Workspace account,
+create an [App Password](https://myaccount.google.com/apppasswords) — your
+normal password will not work — and set `SMTP_USER` and `SMTP_PASS`.
+
+Restart afterwards. Until this is configured the site still takes orders
+normally; the emails are written to the log instead of being sent.
+
+---
+
+## 9. Sign in to the staff portal
+
+Go to `https://hdstradingopc.com/<your ADMIN_PATH>` — for example
+`https://hdstradingopc.com/staff-portal-9f3c`.
+
+Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+Nothing on the public website links to this page, it is excluded from search
+engines, and it is not listed in `robots.txt` (which would advertise it). Treat
+the URL itself as a secret.
+
+---
+
+## Everyday operations
+
+### Deploying an update
+
+```bash
+cd /var/www/hdstradingopc
+git pull
+npm ci
+npm run build
+systemctl restart hdstradingopc
+```
+
+Your products, orders, bookings and reviews live in the database and are not
+touched by a deploy.
+
+### Backing up
+
+**The database file is the business.** It holds every order, booking, quotation
+and review. Back it up daily:
+
+```bash
+mkdir -p /var/backups/hds
+sqlite3 /var/www/hdstradingopc/server/data/hds.db \
+  ".backup /var/backups/hds/hds-$(date +%F).db"
+```
+
+Add it to cron (`crontab -e`) to run every night at 2am, keeping 30 days:
+
+```
+0 2 * * * sqlite3 /var/www/hdstradingopc/server/data/hds.db ".backup /var/backups/hds/hds-$(date +\%F).db" && find /var/backups/hds -name '*.db' -mtime +30 -delete
+```
+
+Install `sqlite3` first with `apt install -y sqlite3`. Copy those backups off
+the server periodically — a backup that only exists on the same machine will
+not survive that machine failing.
+
+### Watching the logs
+
+```bash
+journalctl -u hdstradingopc -f          # application
+tail -f /var/log/nginx/hdstradingopc.error.log
+```
+
+### Changing the admin path
+
+Update **both** `ADMIN_PATH` and `VITE_ADMIN_PATH` in `.env`, then rebuild —
+the path is compiled into the browser bundle, so a restart alone is not enough:
+
+```bash
+npm run build && systemctl restart hdstradingopc
+```
+
+---
+
+## Troubleshooting
+
+**The site shows "has not been built yet"**
+The client build is missing. Run `npm run build`, then restart.
+
+**502 Bad Gateway**
+The Node process is not running. `systemctl status hdstradingopc` and
+`journalctl -u hdstradingopc -n 50` will say why. The usual cause is a missing
+`ADMIN_PASSWORD` or `SESSION_SECRET` — the server deliberately refuses to start
+in production without them rather than leave the admin panel unprotected.
+
+**Payments succeed but orders stay unpaid**
+The webhook is not reaching the server, or its secret is wrong. Check the
+delivery log in the PayMongo dashboard, and confirm `PAYMONGO_WEBHOOK_SECRET`
+matches. Rejected webhooks are logged as
+`Rejected PayMongo webhook with an invalid signature`.
+
+**Emails are not arriving**
+Look for `[email not sent — SMTP not configured]` in the log; that means the
+SMTP settings are blank. If they are set and mail still fails, the log records
+the SMTP error. Gmail requires an App Password, not the account password.
+
+**Courier rates say "Indicative rate"**
+Lalamove or Transportify credentials are missing, or the customer did not pin a
+map location. The order still goes through — staff confirm the exact courier
+fee before dispatch.
+
+**Out of disk space**
+Check with `df -h`. Old backups in `/var/backups/hds` are the usual culprit.

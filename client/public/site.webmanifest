@@ -1,0 +1,14 @@
+{
+  "name": "HDS Trading OPC",
+  "short_name": "HDS Trading",
+  "description": "Institutional cleaning supplies, equipment and pool care in the Philippines.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0e7490",
+  "lang": "en-PH",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
