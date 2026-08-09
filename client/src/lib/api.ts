@@ -16,11 +16,24 @@ import type {
 /**
  * Every call to the backend goes through here.
  *
- * In production the API is served from the same origin as the site, so the base
- * is simply `/api`. In development Vite proxies `/api` to the Express server on
- * port 4000, so the same path works there too.
+ * Where the API lives depends on how the site is deployed:
+ *
+ *  - Single server (default): the API is served from the same origin as the
+ *    site, so `/api` is all that is needed. In development Vite proxies `/api`
+ *    to the Express server, so the same path works there too.
+ *
+ *  - Split hosting: the site is static on the IONOS webspace and the API runs
+ *    on a VPS at its own subdomain. Set `VITE_API_BASE_URL` at build time to
+ *    e.g. `https://api.hdstradingopc.com` and every call goes there instead.
+ *
+ * The admin session cookie survives the split because the API subdomain and the
+ * website share a registrable domain — they are cross-origin but same-site, so
+ * the cookie is still sent and is not affected by third-party cookie blocking.
  */
-const BASE = '/api';
+const configuredBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+
+/** Trailing slashes would produce `//api/...` once we append a path. */
+const BASE = configuredBase ? `${configuredBase.replace(/\/+$/, '')}/api` : '/api';
 
 /**
  * A failed request that carries per-field messages, so a form can show the

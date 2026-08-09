@@ -78,15 +78,32 @@ npm run lint      # typecheck both workspaces
 
 ## Deploying
 
-See **[deploy/DEPLOY-IONOS.md](deploy/DEPLOY-IONOS.md)** for the full
-step-by-step guide: DNS, server setup, HTTPS, payments, email and backups.
+There are two supported topologies. Both use the domain `hdstradingopc.com`.
 
-Short version:
+**Everything on one IONOS VPS — recommended.**
+One machine serves the website and the API. One deploy, one certificate, no
+CORS. See **[deploy/DEPLOY-IONOS.md](deploy/DEPLOY-IONOS.md)**.
 
 ```bash
 npm ci && npm run build
 systemctl restart hdstradingopc
 ```
+
+**Website on the IONOS webspace, API on a VPS.**
+`hdstradingopc.com` serves static files from IONOS Web Hosting;
+`api.hdstradingopc.com` points at the VPS. Useful if you want the hosting
+package you already pay for to serve the site. See
+**[deploy/DEPLOY-SPLIT.md](deploy/DEPLOY-SPLIT.md)**, which also covers the
+trade-offs — you still need the VPS either way.
+
+```bash
+VITE_API_BASE_URL=https://api.hdstradingopc.com npm run build:webspace
+# upload client/dist/ over SFTP
+```
+
+> IONOS *Web Hosting* alone is not enough for either setup — it serves PHP and
+> static files only, so it cannot run the API, payments or bookings. A VPS is
+> required in both cases.
 
 ---
 
@@ -158,7 +175,15 @@ server/
     data/           the starting catalog used to seed a new database
     db.ts           schema and every query
     validation.ts   input rules, with messages written for customers
-deploy/             nginx config, systemd unit, IONOS guide
+deploy/
+  DEPLOY-IONOS.md   single-VPS deployment, start here
+  DEPLOY-SPLIT.md   webspace + VPS deployment
+  nginx.conf        single-VPS: site and API on one domain
+  nginx-api-only.conf   split: API subdomain only
+  webspace/.htaccess    split: SPA routing and headers for IONOS webspace
+  hdstradingopc.service systemd unit
+scripts/
+  generate-static-seo.mjs   robots.txt and sitemap.xml for static hosting
 ```
 
 ### Changing business details

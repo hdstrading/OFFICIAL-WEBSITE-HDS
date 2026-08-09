@@ -54,6 +54,19 @@ export const env = {
   /** How long an admin stays signed in. */
   sessionTtlMs: Number(process.env.SESSION_TTL_HOURS ?? 12) * 60 * 60 * 1000,
 
+  /**
+   * SameSite policy for the admin session cookie.
+   *
+   * `lax` is correct for the single-server setup and for split hosting on a
+   * subdomain (api.hdstradingopc.com and hdstradingopc.com are cross-origin but
+   * same-site, so the cookie is still sent).
+   *
+   * Only set this to `none` if the API lives on a genuinely different domain.
+   * That makes it a third-party cookie, which Safari blocks outright and Chrome
+   * is phasing out — so prefer the subdomain.
+   */
+  sessionCookieSameSite: (process.env.SESSION_COOKIE_SAMESITE ?? 'lax') as 'lax' | 'strict' | 'none',
+
   /** Where new enquiries are emailed. Falls back to the public sales inbox. */
   notifyEmail: process.env.NOTIFY_EMAIL ?? 'hanepditoshop@gmail.com',
 

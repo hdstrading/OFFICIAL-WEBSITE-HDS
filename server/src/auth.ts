@@ -28,8 +28,10 @@ export function startSession(res: Response, email: string): number {
   sessions.create(token, email, expiresAt);
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: isProduction,
+    sameSite: env.sessionCookieSameSite,
+    // SameSite=None is only honoured on a secure cookie, so force it on even
+    // in development if someone configures cross-domain hosting.
+    secure: isProduction || env.sessionCookieSameSite === 'none',
     maxAge: env.sessionTtlMs,
     path: '/',
   });
@@ -39,7 +41,13 @@ export function startSession(res: Response, email: string): number {
 export function endSession(req: Request, res: Response) {
   const token = req.cookies?.[SESSION_COOKIE];
   if (token) sessions.remove(token);
-  res.clearCookie(SESSION_COOKIE, { path: '/' });
+  // The attributes must match the ones the cookie was set with, or the browser
+  // keeps it and the staff member appears to stay signed in.
+  res.clearCookie(SESSION_COOKIE, {
+    path: '/',
+    sameSite: env.sessionCookieSameSite,
+    secure: isProduction || env.sessionCookieSameSite === 'none',
+  });
 }
 
 export interface AuthedRequest extends Request {
