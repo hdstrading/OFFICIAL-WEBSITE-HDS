@@ -82,9 +82,14 @@ curl https://api.hdstradingopc.com/api/health
 
 ## 3. Build the website for the webspace
 
-On your own computer (or the VPS — anywhere with the code):
+On your own computer (or the VPS — anywhere with the code). If you are cloning
+fresh, remember the branch, as in step 3 of the main guide:
 
 ```bash
+git clone -b claude/hds-trading-opc-enhance-zd46mv \
+  https://github.com/hdstrading/OFFICIAL-WEBSITE-HDS.git
+cd OFFICIAL-WEBSITE-HDS
+
 export SITE_URL=https://hdstradingopc.com
 export VITE_API_BASE_URL=https://api.hdstradingopc.com
 

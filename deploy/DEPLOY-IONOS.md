@@ -68,10 +68,33 @@ adduser --system --group --home /var/www/hdstradingopc hds
 
 ## 3. Get the code onto the server
 
+> **Which branch?** Until this work is merged, the site lives on the branch
+> `claude/hds-trading-opc-enhance-zd46mv` — `main` still contains only the
+> README. The `-b` flag below checks out the right branch as you clone. Once
+> the pull request is merged you can drop `-b …` and clone `main` as normal.
+
 ```bash
 cd /var/www
-git clone https://github.com/hdstrading/official-website-hds.git hdstradingopc
+git clone -b claude/hds-trading-opc-enhance-zd46mv \
+  https://github.com/hdstrading/OFFICIAL-WEBSITE-HDS.git hdstradingopc
 cd hdstradingopc
+chown -R hds:hds /var/www/hdstradingopc
+```
+
+Check you have the real thing before continuing — you should see `client`,
+`server`, `deploy` and `.env.example`:
+
+```bash
+ls -a
+```
+
+If all you see is `README.md`, you are on the wrong branch. Switch to it, then
+fix the ownership again, because the newly checked-out files will belong to
+root:
+
+```bash
+git fetch origin claude/hds-trading-opc-enhance-zd46mv
+git checkout claude/hds-trading-opc-enhance-zd46mv
 chown -R hds:hds /var/www/hdstradingopc
 ```
 
@@ -256,6 +279,13 @@ npm run build && systemctl restart hdstradingopc
 ---
 
 ## Troubleshooting
+
+**`cp: cannot stat '.env.example': No such file or directory`**
+You are on the wrong branch — `git clone` gets `main`, which currently holds
+only the README. Run `ls -a`: if `client/` and `server/` are missing, check out
+the branch as shown in step 3, then re-run `chown -R hds:hds
+/var/www/hdstradingopc`. The same applies to any "file not found" error early
+in the setup.
 
 **The site shows "has not been built yet"**
 The client build is missing. Run `npm run build`, then restart.
