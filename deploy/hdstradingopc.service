@@ -21,8 +21,9 @@ User=hds
 Group=hds
 WorkingDirectory=/var/www/hdstradingopc
 
-# Secrets live in this file, readable only by the service user:
-#   sudo chown hds:hds /var/www/hdstradingopc/.env
+# Secrets live in this file. systemd reads it as root before dropping to the
+# hds user, so it stays root-owned and the application never opens it itself:
+#   sudo chown root:root /var/www/hdstradingopc/.env
 #   sudo chmod 600 /var/www/hdstradingopc/.env
 EnvironmentFile=/var/www/hdstradingopc/.env
 Environment=NODE_ENV=production

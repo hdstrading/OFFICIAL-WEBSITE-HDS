@@ -83,8 +83,13 @@ cd /var/www
 git clone -b claude/hds-trading-opc-enhance-zd46mv \
   https://github.com/hdstrading/OFFICIAL-WEBSITE-HDS.git hdstradingopc
 cd hdstradingopc
-chown -R hds:hds /var/www/hdstradingopc
 ```
+
+The code stays owned by `root`. The service reads it as the `hds` user, which
+root-owned files already allow, and only ever *writes* to the database
+directory — created with the right ownership in step 5. Do not `chown` the
+whole checkout to `hds`: it gains nothing, and it makes every later `git pull`
+fail with `detected dubious ownership` because you run git as root.
 
 Check you have the real thing before continuing — you should see `client`,
 `server`, `deploy` and `.env.example`:
@@ -106,12 +111,10 @@ git remote add origin https://github.com/hdstrading/OFFICIAL-WEBSITE-HDS.git
 git fetch origin claude/hds-trading-opc-enhance-zd46mv
 git checkout -b claude/hds-trading-opc-enhance-zd46mv \
   origin/claude/hds-trading-opc-enhance-zd46mv
-chown -R hds:hds /var/www/hdstradingopc
 ```
 
 If `git remote add` reports that the remote already exists, the clone partly
-ran — carry on from the `git fetch` line. Re-run the `chown` afterwards either
-way, since freshly checked-out files belong to root.
+ran — carry on from the `git fetch` line.
 
 ---
 
@@ -133,10 +136,12 @@ Fill in at minimum:
 The site runs without the payment, email and courier keys — it simply hides the
 features they power. You can add them later and restart.
 
-Lock the file down, since it holds your passwords:
+Lock the file down, since it holds your passwords. It stays owned by root:
+systemd reads it as root before dropping to the `hds` user, so the application
+itself never needs permission to open it.
 
 ```bash
-chown hds:hds .env && chmod 600 .env
+chown root:root .env && chmod 600 .env
 ```
 
 ---
@@ -146,6 +151,8 @@ chown hds:hds .env && chmod 600 .env
 ```bash
 npm ci
 npm run build
+
+# The one directory the service writes to, so this one is owned by hds.
 mkdir -p server/data && chown -R hds:hds server/data
 
 cp deploy/hdstradingopc.service /etc/systemd/system/
@@ -295,6 +302,27 @@ npm run build && systemctl restart hdstradingopc
 
 ## Troubleshooting
 
+**`fatal: detected dubious ownership in repository`**
+Git refuses to touch a repository owned by someone other than the user running
+it. This means the checkout got `chown`ed to `hds` at some point — an earlier
+version of this guide did that. Put it back to root and tell git the directory
+is fine:
+
+```bash
+git config --global --add safe.directory /var/www/hdstradingopc
+chown -R root:root /var/www/hdstradingopc
+```
+
+Then re-create the database directory, which *is* meant to belong to `hds`:
+
+```bash
+mkdir -p /var/www/hdstradingopc/server/data
+chown -R hds:hds /var/www/hdstradingopc/server/data
+```
+
+Until this is fixed every git command fails, so a `git fetch` or `git checkout`
+appears to do nothing.
+
 **`cp: cannot stat '.env.example': No such file or directory`**
 The code is not actually there. Run `ls -a` in `/var/www/hdstradingopc` — there
 are two causes, and the listing tells them apart:
@@ -307,7 +335,8 @@ are two causes, and the listing tells them apart:
 - You see only `README.md`. The clone worked but landed on `main`, which holds
   only the README. Check out the branch as shown in step 3.
 
-Either way, re-run `chown -R hds:hds /var/www/hdstradingopc` afterwards.
+Leave the checkout owned by root either way — only `server/data` belongs to
+`hds`.
 
 **The site shows "has not been built yet"**
 The client build is missing. Run `npm run build`, then restart.
