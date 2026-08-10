@@ -24,16 +24,35 @@ Set these two records to your VPS's IPv4 address (shown in **Servers & Cloud**):
 | A    | `@`       | `203.0.113.10`   | 1 hour   |
 | A    | `www`     | `203.0.113.10`   | 1 hour   |
 
-Replace `203.0.113.10` with your real server IP. Delete any existing A or CNAME
-records for `@` and `www` that point somewhere else, or they will conflict.
+Replace `203.0.113.10` with your real server IP — find it with
+`curl -4 -s ifconfig.me` on the VPS itself.
 
-DNS changes usually take effect within an hour. Check with:
+If the domain is attached to an IONOS hosting package, `@` and `www` will
+already point at the shared webspace (something like `74.208.x.x`). **Edit those
+records rather than adding new ones**, or the two will conflict. Other
+subdomains you have — `crm`, `payroll` and so on — are separate records and are
+not affected. Neither is your email: MX records are independent of A records.
+
+DNS changes usually publish within 15–60 minutes. Check against a public
+resolver rather than the server's own, which caches the old answer until its
+TTL expires:
 
 ```bash
+dig +short hdstradingopc.com @1.1.1.1
+dig +short hdstradingopc.com @8.8.8.8
+```
+
+Those are what Let's Encrypt will see, so they are the ones that matter. To
+clear the server's local cache as well:
+
+```bash
+resolvectl flush-caches
 dig +short hdstradingopc.com
 ```
 
-Do not continue to the TLS step until that returns your server's IP.
+Do not continue to the TLS step until the public resolvers return your server's
+IP. Certbot failures are rate-limited to 5 per hostname per hour, so a few
+premature attempts will lock you out for a while.
 
 ---
 
