@@ -58,10 +58,15 @@ node -v    # should print v22.x
 `build-essential` is needed because the database driver compiles a native
 module during install.
 
-Create a dedicated user so the website never runs as root:
+Create a dedicated user so the website never runs as root.
+
+`--no-create-home` matters: without it `adduser` creates
+`/var/www/hdstradingopc` and puts shell profile files in it, and `git clone`
+then refuses to clone into a directory that is not empty. We create the user
+now and let the clone in the next step make the directory.
 
 ```bash
-adduser --system --group --home /var/www/hdstradingopc hds
+adduser --system --group --no-create-home --home /var/www/hdstradingopc hds
 ```
 
 ---
@@ -88,15 +93,25 @@ Check you have the real thing before continuing — you should see `client`,
 ls -a
 ```
 
-If all you see is `README.md`, you are on the wrong branch. Switch to it, then
-fix the ownership again, because the newly checked-out files will belong to
-root:
+### If the directory already existed
+
+If you created the user without `--no-create-home`, or the clone failed for any
+other reason, `/var/www/hdstradingopc` will exist but hold no code. Do not
+delete it — fetch into it instead:
 
 ```bash
+cd /var/www/hdstradingopc
+git init
+git remote add origin https://github.com/hdstrading/OFFICIAL-WEBSITE-HDS.git
 git fetch origin claude/hds-trading-opc-enhance-zd46mv
-git checkout claude/hds-trading-opc-enhance-zd46mv
+git checkout -b claude/hds-trading-opc-enhance-zd46mv \
+  origin/claude/hds-trading-opc-enhance-zd46mv
 chown -R hds:hds /var/www/hdstradingopc
 ```
+
+If `git remote add` reports that the remote already exists, the clone partly
+ran — carry on from the `git fetch` line. Re-run the `chown` afterwards either
+way, since freshly checked-out files belong to root.
 
 ---
 
@@ -281,11 +296,18 @@ npm run build && systemctl restart hdstradingopc
 ## Troubleshooting
 
 **`cp: cannot stat '.env.example': No such file or directory`**
-You are on the wrong branch — `git clone` gets `main`, which currently holds
-only the README. Run `ls -a`: if `client/` and `server/` are missing, check out
-the branch as shown in step 3, then re-run `chown -R hds:hds
-/var/www/hdstradingopc`. The same applies to any "file not found" error early
-in the setup.
+The code is not actually there. Run `ls -a` in `/var/www/hdstradingopc` — there
+are two causes, and the listing tells them apart:
+
+- You see `.bashrc` and `.profile` but no `client/`. The directory was created
+  by `adduser`, so `git clone` refused to write into it ("destination path
+  already exists and is not an empty directory"). Use the
+  [If the directory already existed](#if-the-directory-already-existed) recipe
+  in step 3.
+- You see only `README.md`. The clone worked but landed on `main`, which holds
+  only the README. Check out the branch as shown in step 3.
+
+Either way, re-run `chown -R hds:hds /var/www/hdstradingopc` afterwards.
 
 **The site shows "has not been built yet"**
 The client build is missing. Run `npm run build`, then restart.
