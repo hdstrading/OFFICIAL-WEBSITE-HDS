@@ -185,8 +185,26 @@ On first start the database is created and filled with the starting catalog.
 
 ## 6. Put nginx in front and switch on HTTPS
 
+This is a three-step dance, because of a deadlock worth understanding: the real
+nginx config points at certificate files, so nginx refuses to start until they
+exist — but certbot needs a working nginx to prove you own the domain. So we
+start with an HTTP-only config, get the certificate, then install the real one.
+
+**First check DNS actually points here.** The certificate request fails
+otherwise, and Let's Encrypt rate-limits repeated failures:
+
 ```bash
-cp deploy/nginx.conf /etc/nginx/sites-available/hdstradingopc
+dig +short hdstradingopc.com
+curl -4 -s ifconfig.me; echo
+```
+
+Those two must print the same address. If not, go back to step 1 and wait for
+DNS to propagate.
+
+### 6a. HTTP-only, so certbot has something to work with
+
+```bash
+cp deploy/nginx-bootstrap.conf /etc/nginx/sites-available/hdstradingopc
 ln -s /etc/nginx/sites-available/hdstradingopc /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 mkdir -p /var/www/certbot
@@ -194,15 +212,28 @@ mkdir -p /var/www/certbot
 nginx -t && systemctl reload nginx
 ```
 
-The supplied config already references certificate paths, so nginx will not
-start cleanly until the certificate exists. Get it now:
+`nginx -t` should now say `syntax is ok` and `test is successful`. Your site is
+already reachable at `http://hdstradingopc.com` at this point — over plain
+HTTP, which the next two steps fix.
+
+### 6b. Get the certificate
 
 ```bash
-certbot --nginx -d hdstradingopc.com -d www.hdstradingopc.com
+certbot certonly --webroot -w /var/www/certbot \
+  -d hdstradingopc.com -d www.hdstradingopc.com
 ```
 
-Certbot obtains the certificate, wires it in and sets up automatic renewal.
-Check renewal works:
+`certonly` obtains the certificate without touching your nginx config, which is
+what we want — the config we are about to install already handles TLS.
+
+### 6c. Install the real config
+
+```bash
+cp deploy/nginx.conf /etc/nginx/sites-available/hdstradingopc
+nginx -t && systemctl reload nginx
+```
+
+Certbot has already set up automatic renewal. Confirm it works:
 
 ```bash
 certbot renew --dry-run
@@ -312,6 +343,19 @@ npm run build && systemctl restart hdstradingopc
 ---
 
 ## Troubleshooting
+
+**`nginx: [emerg] cannot load certificate ... fullchain.pem`**
+You installed the real config before obtaining the certificate. nginx cannot
+start without the certificate file, and certbot cannot create it while nginx is
+down. Install `nginx-bootstrap.conf` first and follow step 6 in order —
+6a, 6b, 6c.
+
+**`certbot` fails with "Timeout during connect" or "unauthorized"**
+Let's Encrypt could not fetch the challenge file. Check, in this order:
+`dig +short hdstradingopc.com` matches `curl -4 -s ifconfig.me`; port 80 is open
+(`ufw allow 80,443/tcp` if the firewall is on); and the bootstrap config is the
+one currently loaded. Repeated failures are rate-limited, so fix the cause
+before retrying.
 
 **`status=200/CHDIR` and the service sits in `activating (auto-restart)`**
 systemd could not enter the `WorkingDirectory` as the `hds` user, so the app

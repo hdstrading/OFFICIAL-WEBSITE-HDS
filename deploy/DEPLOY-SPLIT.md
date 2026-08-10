@@ -61,14 +61,25 @@ Restart: `sudo systemctl restart hdstradingopc`
 
 Use the API-only config rather than the full-site one:
 
+Same three-step dance as the main guide: the real config points at certificate
+files that do not exist yet, and certbot needs a working nginx before it can
+create them. Start HTTP-only, get the certificate, then install the real config.
+
 ```bash
-sudo cp deploy/nginx-api-only.conf /etc/nginx/sites-available/hds-api
+# Bootstrap config, with server_name pointed at the API subdomain.
+sudo sed 's/hdstradingopc.com www.hdstradingopc.com/api.hdstradingopc.com/' \
+  deploy/nginx-bootstrap.conf | sudo tee /etc/nginx/sites-available/hds-api > /dev/null
 sudo ln -s /etc/nginx/sites-available/hds-api /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo mkdir -p /var/www/certbot
 sudo nginx -t && sudo systemctl reload nginx
 
-sudo certbot --nginx -d api.hdstradingopc.com
+# Certificate for the API subdomain only.
+sudo certbot certonly --webroot -w /var/www/certbot -d api.hdstradingopc.com
+
+# Now the real config.
+sudo cp deploy/nginx-api-only.conf /etc/nginx/sites-available/hds-api
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 Check it:
