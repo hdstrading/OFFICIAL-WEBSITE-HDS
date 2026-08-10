@@ -85,11 +85,22 @@ git clone -b claude/hds-trading-opc-enhance-zd46mv \
 cd hdstradingopc
 ```
 
+Make sure the directory can be entered by the service user:
+
+```bash
+chmod 755 /var/www/hdstradingopc
+```
+
 The code stays owned by `root`. The service reads it as the `hds` user, which
 root-owned files already allow, and only ever *writes* to the database
 directory — created with the right ownership in step 5. Do not `chown` the
 whole checkout to `hds`: it gains nothing, and it makes every later `git pull`
 fail with `detected dubious ownership` because you run git as root.
+
+The `chmod` matters because `hds` still has to *traverse into* the directory to
+run. If the folder was created by `adduser` it may be mode `0750`, which on a
+root-owned directory locks the service out and makes systemd fail with
+`status=200/CHDIR`.
 
 Check you have the real thing before continuing — you should see `client`,
 `server`, `deploy` and `.env.example`:
@@ -302,6 +313,22 @@ npm run build && systemctl restart hdstradingopc
 
 ## Troubleshooting
 
+**`status=200/CHDIR` and the service sits in `activating (auto-restart)`**
+systemd could not enter the `WorkingDirectory` as the `hds` user, so the app
+never started. The directory is root-owned but not traversable by others —
+usually mode `0750`, left behind by `adduser`:
+
+```bash
+chmod 755 /var/www/hdstradingopc
+mkdir -p /var/www/hdstradingopc/server/data
+chown -R hds:hds /var/www/hdstradingopc/server/data
+systemctl restart hdstradingopc
+```
+
+`namei -l /var/www/hdstradingopc/server/dist/index.js` prints the permissions
+of every directory along the path, which shows immediately where the traversal
+is blocked.
+
 **`fatal: detected dubious ownership in repository`**
 Git refuses to touch a repository owned by someone other than the user running
 it. This means the checkout got `chown`ed to `hds` at some point — an earlier
@@ -311,6 +338,8 @@ is fine:
 ```bash
 git config --global --add safe.directory /var/www/hdstradingopc
 chown -R root:root /var/www/hdstradingopc
+# The service still has to be able to enter the directory it runs from.
+chmod 755 /var/www/hdstradingopc
 ```
 
 Then re-create the database directory, which *is* meant to belong to `hds`:
