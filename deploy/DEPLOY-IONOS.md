@@ -204,38 +204,66 @@ On first start the database is created and filled with the starting catalog.
 
 ## 6. Put nginx in front and switch on HTTPS
 
-This is a three-step dance, because of a deadlock worth understanding: the real
-nginx config points at certificate files, so nginx refuses to start until they
-exist — but certbot needs a working nginx to prove you own the domain. So we
-start with an HTTP-only config, get the certificate, then install the real one.
+There is a deadlock here worth understanding: the real nginx config points at
+certificate files, so nginx refuses to start until they exist — but certbot
+needs a working nginx to prove you own the domain. So we start with an
+HTTP-only config, confirm it is reachable, get the certificate, then install
+the real one.
 
 **First check DNS actually points here.** The certificate request fails
 otherwise, and Let's Encrypt rate-limits repeated failures:
 
 ```bash
-dig +short hdstradingopc.com
+dig +short hdstradingopc.com @1.1.1.1
 curl -4 -s ifconfig.me; echo
 ```
 
-Those two must print the same address. If not, go back to step 1 and wait for
-DNS to propagate.
+Those two must print the same address. Query `@1.1.1.1` rather than the
+server's own resolver, which may still be serving a cached answer — see step 1.
+If they differ, go back to step 1 and wait for DNS to publish.
 
 ### 6a. HTTP-only, so certbot has something to work with
 
+Every `deploy/…` path below is relative to the checkout, so start there:
+
 ```bash
+cd /var/www/hdstradingopc
+
 cp deploy/nginx-bootstrap.conf /etc/nginx/sites-available/hdstradingopc
 ln -s /etc/nginx/sites-available/hdstradingopc /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 mkdir -p /var/www/certbot
 
-nginx -t && systemctl reload nginx
+nginx -t && systemctl restart nginx
 ```
 
-`nginx -t` should now say `syntax is ok` and `test is successful`. Your site is
-already reachable at `http://hdstradingopc.com` at this point — over plain
-HTTP, which the next two steps fix.
+`restart` rather than `reload`: if an earlier config error stopped nginx,
+reloading a stopped service does nothing and you are left with nothing on port
+80. `nginx -t` should say `syntax is ok` and `test is successful`.
 
-### 6b. Get the certificate
+### 6b. Prove the challenge path is reachable
+
+Certbot failures are rate-limited, so confirm the path works before spending an
+attempt:
+
+```bash
+ss -tlnp | grep ':80'          # nginx should be listening
+
+mkdir -p /var/www/certbot/.well-known/acme-challenge
+echo hello > /var/www/certbot/.well-known/acme-challenge/test
+curl http://hdstradingopc.com/.well-known/acme-challenge/test
+```
+
+That must print `hello`. If it does not, fix it before continuing — a 404 means
+the bootstrap config is not the one loaded, and connection refused means nginx
+is not running or port 80 is closed (`ufw allow 80,443/tcp` if the firewall is
+on).
+
+```bash
+rm /var/www/certbot/.well-known/acme-challenge/test
+```
+
+### 6c. Get the certificate
 
 ```bash
 certbot certonly --webroot -w /var/www/certbot \
@@ -245,7 +273,7 @@ certbot certonly --webroot -w /var/www/certbot \
 `certonly` obtains the certificate without touching your nginx config, which is
 what we want — the config we are about to install already handles TLS.
 
-### 6c. Install the real config
+### 6d. Install the real config
 
 ```bash
 cp deploy/nginx.conf /etc/nginx/sites-available/hdstradingopc
@@ -363,11 +391,21 @@ npm run build && systemctl restart hdstradingopc
 
 ## Troubleshooting
 
+**`cp: cannot stat 'deploy/…': No such file or directory` during step 6**
+Either you are not in the checkout — every `deploy/…` path is relative to
+`/var/www/hdstradingopc`, so `cd` there first — or your copy of the repository
+predates the file. Run `git pull` and check with `ls deploy/`.
+
 **`nginx: [emerg] cannot load certificate ... fullchain.pem`**
 You installed the real config before obtaining the certificate. nginx cannot
 start without the certificate file, and certbot cannot create it while nginx is
-down. Install `nginx-bootstrap.conf` first and follow step 6 in order —
-6a, 6b, 6c.
+down. Install `nginx-bootstrap.conf` first and follow step 6 in order.
+
+Watch for this cascading: if the `cp` of the bootstrap config fails, the old
+config stays in place, nginx will not start, nothing listens on port 80, and
+certbot then reports `Connection refused` — which looks like a firewall or DNS
+problem but is not. Check `nginx -t` passes and `ss -tlnp | grep ':80'` shows
+nginx before running certbot.
 
 **`certbot` fails with "Timeout during connect" or "unauthorized"**
 Let's Encrypt could not fetch the challenge file. Check, in this order:
