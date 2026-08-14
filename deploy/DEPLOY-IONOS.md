@@ -322,22 +322,93 @@ you can undo it if something is wrong.
 
 ## 7. Turn on online payments
 
-1. Create an account at [dashboard.paymongo.com](https://dashboard.paymongo.com)
-   and complete business verification (they will ask for your SEC registration
-   and BIR documents).
-2. Copy your **secret** and **public** keys into `.env`.
-3. In the PayMongo dashboard create a webhook:
-   - **URL:** `https://hdstradingopc.com/api/webhooks/paymongo`
-   - **Event:** `checkout_session.payment.paid`
-4. Copy the webhook's signing secret into `PAYMONGO_WEBHOOK_SECRET`.
-5. Restart: `systemctl restart hdstradingopc`
+This turns on card, GCash, Maya and online bank transfer at checkout. Do the
+whole thing in **test mode** first — the last stage switches you to live.
 
-Card, GCash, Maya and online bank transfer now appear at checkout.
+### 7a. Get a PayMongo account
 
-**Test with `sk_test_` keys first.** Place a test order and confirm it flips to
-"Paid" on the order page. An order only becomes paid when the webhook arrives —
-if the webhook secret is wrong, payments will be taken but never recorded, so
-verify this before going live.
+Sign up at [dashboard.paymongo.com](https://dashboard.paymongo.com) and complete
+business verification. They ask for your SEC registration and BIR documents, and
+approval usually takes a few working days. You can build and test everything
+below with test keys while you wait — those are available immediately.
+
+### 7b. Add your test keys
+
+In the dashboard, under **Developers → API Keys**, copy the **test** keys:
+
+```bash
+cd /var/www/hdstradingopc
+nano .env
+```
+
+```bash
+PAYMONGO_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxx
+PAYMONGO_PUBLIC_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxx
+```
+
+### 7c. Create the webhook
+
+The webhook is what tells your server a payment succeeded. Without it customers
+can pay and their order stays "unpaid" forever, so this step is not optional.
+
+```bash
+node scripts/paymongo-webhook.mjs create
+```
+
+It prints a `PAYMONGO_WEBHOOK_SECRET=whsk_…` line. Paste that into `.env`.
+
+**PayMongo shows the signing secret only once.** If you lose it, delete the
+webhook and create a new one — `node scripts/paymongo-webhook.mjs list` shows
+what exists.
+
+Then restart:
+
+```bash
+systemctl restart hdstradingopc
+```
+
+### 7d. Place a test order
+
+Open your site, add something to the cart and check out with **Credit or Debit
+Card**. On the PayMongo page use their test card:
+
+| Field  | Value                |
+| ------ | -------------------- |
+| Number | `4343 4343 4343 4345` |
+| Expiry | any future date      |
+| CVC    | any 3 digits         |
+
+Then check the order page. It must show **Paid**.
+
+If it still says awaiting payment, the webhook is not reaching you. Check in
+this order:
+
+```bash
+journalctl -u hdstradingopc -n 50 --no-pager | grep -i paymongo
+node scripts/paymongo-webhook.mjs list
+```
+
+`Rejected PayMongo webhook with an invalid signature` means
+`PAYMONGO_WEBHOOK_SECRET` does not match the webhook you created. Nothing in the
+log at all means PayMongo could not reach your server — confirm the webhook URL
+is your real HTTPS address.
+
+Use a realistic order value when testing. PayMongo enforces a minimum
+transaction amount and rejects very small ones.
+
+### 7e. Go live
+
+Once a test payment shows as Paid end to end, swap in the **live** keys from the
+dashboard and create the webhook again — live mode has its own keys *and* its own
+webhook:
+
+```bash
+nano .env                                   # sk_live_… and pk_live_…
+node scripts/paymongo-webhook.mjs create    # new secret for live mode
+systemctl restart hdstradingopc
+```
+
+Confirm with one small real purchase on your own card before announcing it.
 
 ---
 

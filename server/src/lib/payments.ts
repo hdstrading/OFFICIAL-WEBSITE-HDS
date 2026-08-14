@@ -110,10 +110,78 @@ export interface CheckoutSession {
   url: string;
 }
 
+interface GatewayLineItem {
+  name: string;
+  quantity: number;
+  amount: number;
+  currency: 'PHP';
+}
+
+/**
+ * Builds the line items shown on the gateway's payment page.
+ *
+ * The only thing that must always hold is that these sum to exactly what we
+ * told the customer they would pay. The gateway rejects negative amounts, so a
+ * discount cannot be its own line — when one applies we fall back to a single
+ * line for the order total rather than listing items that add up to more than
+ * we quoted.
+ *
+ * Quantities are folded into the name and every line sent as quantity 1, so the
+ * amount we compute is the amount charged, with no per-unit rounding in
+ * between.
+ */
+function buildLineItems(order: Order): GatewayLineItem[] {
+  const expectedTotal = toCentavos(order.total);
+
+  const summaryLine = (): GatewayLineItem[] => [
+    {
+      name: `HDS Trading order ${order.reference} (${order.items.length} item${
+        order.items.length === 1 ? '' : 's'
+      }, incl. VAT and delivery)`,
+      quantity: 1,
+      amount: expectedTotal,
+      currency: 'PHP',
+    },
+  ];
+
+  if (order.discountAmount > 0) return summaryLine();
+
+  const itemised: GatewayLineItem[] = order.items.map((item) => ({
+    name: item.quantity > 1 ? `${item.name} × ${item.quantity}` : item.name,
+    quantity: 1,
+    amount: toCentavos(item.lineTotal),
+    currency: 'PHP',
+  }));
+
+  if (order.vat > 0) {
+    itemised.push({ name: 'VAT (12%)', quantity: 1, amount: toCentavos(order.vat), currency: 'PHP' });
+  }
+  if (order.deliveryFee > 0) {
+    itemised.push({
+      name: `Delivery — ${order.delivery.label}`,
+      quantity: 1,
+      amount: toCentavos(order.deliveryFee),
+      currency: 'PHP',
+    });
+  }
+
+  // Last line of defence: if the parts do not add up to the total for any
+  // reason, charge the total rather than whatever the parts happen to sum to.
+  const sum = itemised.reduce((total, line) => total + line.amount, 0);
+  if (sum !== expectedTotal) {
+    console.warn(
+      `Line items for ${order.reference} summed to ${sum} but the order total is ` +
+        `${expectedTotal}; falling back to a single line.`,
+    );
+    return summaryLine();
+  }
+
+  return itemised;
+}
+
 /**
  * Creates a hosted checkout page for an order and returns the URL to send the
- * customer to. Line items are sent through so the customer sees exactly what
- * they are paying for on the gateway's page.
+ * customer to.
  */
 export async function createCheckoutSession(order: Order): Promise<CheckoutSession> {
   if (!paymentsConfigured) {
@@ -123,34 +191,7 @@ export async function createCheckoutSession(order: Order): Promise<CheckoutSessi
     throw new PaymentError(`${order.paymentMethod} is not settled online.`);
   }
 
-  const lineItems = order.items.map((item) => ({
-    name: item.name,
-    quantity: item.quantity,
-    amount: toCentavos(item.unitPrice),
-    currency: 'PHP',
-  }));
-
-  // Discount, VAT and delivery are separate lines so the gateway total matches
-  // the total we showed on our own checkout page to the centavo.
-  if (order.discountAmount > 0) {
-    lineItems.push({
-      name: `Discount (${order.discountCode ?? 'applied'})`,
-      quantity: 1,
-      amount: -toCentavos(order.discountAmount),
-      currency: 'PHP',
-    });
-  }
-  if (order.vat > 0) {
-    lineItems.push({ name: 'VAT (12%)', quantity: 1, amount: toCentavos(order.vat), currency: 'PHP' });
-  }
-  if (order.deliveryFee > 0) {
-    lineItems.push({
-      name: `Delivery — ${order.delivery.label}`,
-      quantity: 1,
-      amount: toCentavos(order.deliveryFee),
-      currency: 'PHP',
-    });
-  }
+  const lineItems = buildLineItems(order);
 
   const response = await fetch(`${API}/checkout_sessions`, {
     method: 'POST',
