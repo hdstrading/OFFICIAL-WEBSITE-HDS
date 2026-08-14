@@ -149,8 +149,8 @@ seedIfEmpty();
 sessions.purgeExpired();
 setInterval(() => sessions.purgeExpired(), 60 * 60 * 1000).unref();
 
-app.listen(env.port, () => {
-  console.info(`\n  HDS Trading OPC server running on http://localhost:${env.port}`);
+app.listen(env.port, env.host, () => {
+  console.info(`\n  HDS Trading OPC server running on http://${env.host}:${env.port}`);
   console.info(`  Public site : ${env.siteUrl}`);
   console.info(`  Admin panel : ${env.siteUrl}/${env.adminPath}`);
   console.info(`  Client build: ${clientBuilt ? env.clientDist : 'not built yet'}\n`);

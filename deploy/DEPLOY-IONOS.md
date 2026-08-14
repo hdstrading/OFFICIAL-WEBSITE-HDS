@@ -290,6 +290,36 @@ Open **https://hdstradingopc.com** — the site should load over HTTPS.
 
 ---
 
+## 6e. Close the server down
+
+The application listens on loopback only, so port 4000 is not reachable from
+outside — nginx proxies to it from the same machine. Confirm that:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4000/api/health   # 200
+curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://YOUR_SERVER_IP:4000/api/health
+```
+
+The second should fail to connect. If it returns 200, `HOST` is set to
+`0.0.0.0` somewhere — fix it in `.env` and restart, because that address serves
+your site over plain HTTP with none of nginx's protections.
+
+Then turn the firewall on. **Allow SSH first** — enabling `ufw` without it will
+lock you out of your own server, and IONOS VPS access is not trivial to recover:
+
+```bash
+ufw allow OpenSSH          # check your port first: ss -tlnp | grep sshd
+ufw allow 80,443/tcp
+ufw --force enable
+ufw status verbose
+```
+
+You should see `22/tcp`, `80/tcp` and `443/tcp` allowed and everything else
+denied. Reconnect over SSH in a *second* terminal before closing this one, so
+you can undo it if something is wrong.
+
+---
+
 ## 7. Turn on online payments
 
 1. Create an account at [dashboard.paymongo.com](https://dashboard.paymongo.com)

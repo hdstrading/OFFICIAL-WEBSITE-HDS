@@ -44,6 +44,19 @@ function resolveSessionSecret(): string {
 
 export const env = {
   port: Number(process.env.PORT ?? 4000),
+
+  /**
+   * Network interface to listen on.
+   *
+   * Defaults to loopback only: nginx proxies from the same machine, so the
+   * application never needs to be reachable from outside. Binding to 0.0.0.0
+   * would expose it on its port directly — bypassing TLS, the security headers
+   * and the rate limiting that nginx applies.
+   *
+   * Set HOST=0.0.0.0 only if you are running without a reverse proxy, and put a
+   * firewall in front of it if you do.
+   */
+  host: process.env.HOST ?? '127.0.0.1',
   siteUrl: (process.env.SITE_URL ?? 'https://hdstradingopc.com').replace(/\/$/, ''),
   databaseFile: process.env.DATABASE_FILE ?? path.join(ROOT, 'server', 'data', 'hds.db'),
   clientDist: process.env.CLIENT_DIST ?? path.join(ROOT, 'client', 'dist'),
