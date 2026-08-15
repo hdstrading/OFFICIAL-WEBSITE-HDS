@@ -170,6 +170,17 @@ const stringArray = z.array(z.string().trim().max(400)).max(30).default([]);
 export const productSchema = z.object({
   id: z.string().trim().min(1).max(80).optional(),
   name: trimmed(2, 200, 'Product name'),
+  /**
+   * Must match the SKU in the inventory system exactly — it is what an order
+   * line is matched on there. Blank is allowed so a product can be listed
+   * before it exists in inventory, but such an order cannot be pushed.
+   */
+  sku: z
+    .string()
+    .trim()
+    .max(60)
+    .regex(/^[A-Za-z0-9._/-]*$/, 'Use letters, numbers, dots, dashes, slashes and underscores only.')
+    .default(''),
   category: z.enum([
     'janitorial_tools',
     'equipment',

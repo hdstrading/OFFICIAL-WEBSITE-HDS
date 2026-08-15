@@ -7,6 +7,7 @@ import {
   ShoppingCart,
   Sparkles,
   Tag,
+  Warehouse,
   Wrench,
 } from 'lucide-react';
 import { adminApi, ApiError } from '../../lib/api';
@@ -14,12 +15,23 @@ import { formatDate, formatDateTime, peso, PAYMENT_STATUS_LABELS, ORDER_STATUS_L
 import type { Booking, DiscountCode, Order, QuoteRequest, Review } from '../../types';
 import { Alert, Badge, Button, Section, SelectField, Spinner, StarRating, TextField } from '../../components/ui';
 import CatalogEditor from './CatalogEditor';
+import InventoryLink from './InventoryLink';
 
-type Tab = 'overview' | 'orders' | 'bookings' | 'quotes' | 'catalog' | 'reviews' | 'calendar' | 'promos';
+type Tab =
+  | 'overview'
+  | 'orders'
+  | 'inventory'
+  | 'bookings'
+  | 'quotes'
+  | 'catalog'
+  | 'reviews'
+  | 'calendar'
+  | 'promos';
 
 const TABS: { key: Tab; label: string; icon: typeof Package }[] = [
   { key: 'overview', label: 'Overview', icon: Sparkles },
   { key: 'orders', label: 'Orders', icon: ShoppingCart },
+  { key: 'inventory', label: 'Warehouse', icon: Warehouse },
   { key: 'bookings', label: 'Bookings', icon: CalendarX2 },
   { key: 'quotes', label: 'Quotations', icon: Package },
   { key: 'catalog', label: 'Catalog', icon: Wrench },
@@ -77,6 +89,7 @@ export default function AdminDashboard({ onSessionExpired }: { onSessionExpired:
 
       {tab === 'overview' && <OverviewTab onError={handleError} />}
       {tab === 'orders' && <OrdersTab onError={handleError} />}
+      {tab === 'inventory' && <InventoryLink onError={handleError} />}
       {tab === 'bookings' && <BookingsTab onError={handleError} />}
       {tab === 'quotes' && <QuotesTab onError={handleError} />}
       {tab === 'catalog' && <CatalogEditor onError={handleError} />}

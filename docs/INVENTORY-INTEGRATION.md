@@ -149,7 +149,7 @@ match the website to whatever you decide.
 
 ## How the website uses it
 
-### Catalog sync — inventory to website
+### Catalog sync — inventory to website  ⏳ waiting on the endpoint above
 
 A scheduled pull, every `INVENTORY_SYNC_MINUTES` (default 15), plus a **Sync
 now** button in the staff portal.
@@ -169,7 +169,7 @@ Stock is displayed as availability, not a raw count: *In stock*, *Low stock*, or
 *Out of stock*. An exact number goes stale between syncs and invites arguments;
 "low stock" stays true for longer and reads better.
 
-### Orders — website to inventory
+### Orders — website to inventory  ✅ built
 
 An order becomes a sales order **once payment is confirmed**:
 
@@ -201,6 +201,27 @@ If the inventory system cannot be reached at that moment, checkout proceeds on
 the last known figures rather than blocking the sale — an occasional oversell is
 a phone call, whereas a checkout that refuses everyone during an outage is lost
 revenue.
+
+---
+
+## Verified behaviour
+
+The order push was tested end to end against a stand-in for the inventory API:
+
+| Scenario | Result |
+| --- | --- |
+| Order with a discount code | Sales order total matched the customer's receipt exactly (₱9,777.60 both sides) |
+| Inventory system unreachable | Order accepted, queued, retried automatically |
+| Unknown SKU | Marked *needs attention* with the SKU named; no pointless auto-retries |
+| Same order pushed twice | No duplicate sales order created |
+| Staff "Send all now" after an outage | Backlog delivered immediately, ignoring retry timers |
+
+That first row is the one that mattered most. The inventory system taxes the
+pre-discount subtotal while the website taxes the post-discount net, so sending
+our discount unchanged would have made every discounted sales order 12% of the
+discount higher than what the customer actually paid. The discount is grossed up
+by the VAT rate to compensate, and `expectedInventoryTotal()` re-checks the
+arithmetic on every push and logs a warning if the two ever disagree.
 
 ---
 

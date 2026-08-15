@@ -27,6 +27,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS products (
     id           TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
+    sku          TEXT NOT NULL DEFAULT '',
     category     TEXT NOT NULL,
     subcategory  TEXT NOT NULL DEFAULT '',
     description  TEXT NOT NULL DEFAULT '',
@@ -162,10 +163,18 @@ db.exec(`
     vat                  REAL NOT NULL DEFAULT 0,
     total                REAL NOT NULL DEFAULT 0,
     created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    paid_at              TEXT
+    paid_at              TEXT,
+    inventory_status     TEXT NOT NULL DEFAULT 'pending',
+    inventory_ref        TEXT,
+    inventory_error      TEXT,
+    inventory_attempts   INTEGER NOT NULL DEFAULT 0,
+    /* Backoff: the worker ignores an order until this time has passed. */
+    inventory_next_try   TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_orders_invstatus ON orders (inventory_status);
+  CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
   CREATE INDEX IF NOT EXISTS idx_orders_payref  ON orders (payment_reference);
 
   CREATE TABLE IF NOT EXISTS sessions (
@@ -181,6 +190,37 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_expiry  ON sessions (expires_at);
 `);
 
+/* --------------------------------------------------------------- migrations */
+
+/**
+ * Adds a column to an existing table.
+ *
+ * The CREATE TABLE statements above only run when a table does not yet exist,
+ * so on a database that is already live — with real orders in it — a new column
+ * added to one of them would never appear. Every column introduced after the
+ * first release therefore has to be declared here as well.
+ *
+ * Safe to run on every boot: SQLite raises "duplicate column name" when it is
+ * already present, which is the success case on the second and later runs.
+ */
+function addColumn(table: string, column: string, definition: string) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.info(`Migrated: added ${table}.${column}`);
+  } catch (error) {
+    const message = (error as Error).message;
+    if (!message.includes('duplicate column name')) throw error;
+  }
+}
+
+// Added when the inventory system link was introduced.
+addColumn('products', 'sku', "TEXT NOT NULL DEFAULT ''");
+addColumn('orders', 'inventory_status', "TEXT NOT NULL DEFAULT 'pending'");
+addColumn('orders', 'inventory_ref', 'TEXT');
+addColumn('orders', 'inventory_error', 'TEXT');
+addColumn('orders', 'inventory_attempts', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('orders', 'inventory_next_try', 'TEXT');
+
 /* ------------------------------------------------------------------ mappers */
 
 const json = <T>(raw: string, fallback: T): T => {
@@ -194,6 +234,7 @@ const json = <T>(raw: string, fallback: T): T => {
 type ProductRow = {
   id: string;
   name: string;
+  sku: string;
   category: string;
   subcategory: string;
   description: string;
@@ -209,6 +250,7 @@ type ProductRow = {
 const toProduct = (r: ProductRow): Product => ({
   id: r.id,
   name: r.name,
+  sku: r.sku ?? '',
   category: r.category as Product['category'],
   subcategory: r.subcategory,
   description: r.description,
@@ -353,18 +395,20 @@ export const products = {
   },
   upsert(p: Product, sortOrder = 0): Product {
     db.prepare(
-      `INSERT INTO products (id, name, category, subcategory, description, price, unit, image,
+      `INSERT INTO products (id, name, sku, category, subcategory, description, price, unit, image,
                              features, specs, is_bulk, min_bulk_qty, sort_order)
-       VALUES (@id, @name, @category, @subcategory, @description, @price, @unit, @image,
+       VALUES (@id, @name, @sku, @category, @subcategory, @description, @price, @unit, @image,
                @features, @specs, @is_bulk, @min_bulk_qty, @sort_order)
        ON CONFLICT(id) DO UPDATE SET
-         name = excluded.name, category = excluded.category, subcategory = excluded.subcategory,
+         name = excluded.name, sku = excluded.sku, category = excluded.category,
+         subcategory = excluded.subcategory,
          description = excluded.description, price = excluded.price, unit = excluded.unit,
          image = excluded.image, features = excluded.features, specs = excluded.specs,
          is_bulk = excluded.is_bulk, min_bulk_qty = excluded.min_bulk_qty`,
     ).run({
       id: p.id,
       name: p.name,
+      sku: p.sku ?? '',
       category: p.category,
       subcategory: p.subcategory,
       description: p.description,
@@ -814,6 +858,10 @@ type OrderRow = {
   total: number;
   created_at: string;
   paid_at: string | null;
+  inventory_status: string;
+  inventory_ref: string | null;
+  inventory_error: string | null;
+  inventory_attempts: number;
 };
 
 const toOrder = (r: OrderRow): Order => ({
@@ -842,6 +890,10 @@ const toOrder = (r: OrderRow): Order => ({
   total: r.total,
   createdAt: r.created_at,
   paidAt: r.paid_at,
+  inventoryStatus: (r.inventory_status ?? 'pending') as Order['inventoryStatus'],
+  inventoryRef: r.inventory_ref,
+  inventoryError: r.inventory_error,
+  inventoryAttempts: r.inventory_attempts ?? 0,
 });
 
 export const orders = {
@@ -938,6 +990,89 @@ export const orders = {
         .run(ref, trackingUrl, id).changes > 0
     );
   },
+  /* ------------------------------------------------ inventory system push */
+
+  /**
+   * Orders due to be sent to the inventory system.
+   *
+   * `pending` only — `failed` needs a person to fix the cause (usually a SKU)
+   * and retry by hand, and retrying it automatically would just log the same
+   * error every few minutes. The backoff time gates how soon a transient
+   * failure is tried again.
+   */
+  duePushes(limit = 25, ignoreBackoff = false): Order[] {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM orders
+            WHERE inventory_status = 'pending'
+              AND (? = 1 OR inventory_next_try IS NULL OR inventory_next_try <= datetime('now'))
+            ORDER BY created_at
+            LIMIT ?`,
+        )
+        .all(ignoreBackoff ? 1 : 0, limit) as OrderRow[]
+    ).map(toOrder);
+  },
+  /** Orders staff need to see: still queued, or given up on. */
+  pushBacklog(): Order[] {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM orders
+            WHERE inventory_status IN ('pending','failed')
+            ORDER BY created_at DESC`,
+        )
+        .all() as OrderRow[]
+    ).map(toOrder);
+  },
+  setInventorySent(id: string, salesOrderNumber: string) {
+    db.prepare(
+      `UPDATE orders
+          SET inventory_status = 'sent', inventory_ref = ?, inventory_error = NULL,
+              inventory_next_try = NULL
+        WHERE id = ?`,
+    ).run(salesOrderNumber, id);
+  },
+  /**
+   * Records a failed attempt. `retryInMinutes` null means do not retry
+   * automatically — the cause will not resolve itself.
+   */
+  setInventoryFailure(id: string, message: string, retryInMinutes: number | null) {
+    db.prepare(
+      `UPDATE orders
+          SET inventory_status = ?,
+              inventory_error = ?,
+              inventory_attempts = inventory_attempts + 1,
+              inventory_next_try = CASE WHEN ? IS NULL THEN NULL
+                                        ELSE datetime('now', '+' || ? || ' minutes') END
+        WHERE id = ?`,
+    ).run(retryInMinutes === null ? 'failed' : 'pending', message, retryInMinutes, retryInMinutes, id);
+  },
+  setInventoryStatus(id: string, status: Order['inventoryStatus'], message: string | null = null) {
+    db.prepare(
+      `UPDATE orders SET inventory_status = ?, inventory_error = ? WHERE id = ?`,
+    ).run(status, message, id);
+  },
+  /** Clears the backoff and error so a staff retry runs on the next tick. */
+  requeueInventoryPush(id: string): boolean {
+    return (
+      db
+        .prepare(
+          `UPDATE orders
+              SET inventory_status = 'pending', inventory_error = NULL, inventory_next_try = NULL
+            WHERE id = ? AND inventory_status != 'sent'`,
+        )
+        .run(id).changes > 0
+    );
+  },
+  inventoryCounts(): { pending: number; failed: number; sent: number } {
+    const rows = db
+      .prepare('SELECT inventory_status AS status, COUNT(*) AS n FROM orders GROUP BY inventory_status')
+      .all() as { status: string; n: number }[];
+    const get = (status: string) => rows.find((r) => r.status === status)?.n ?? 0;
+    return { pending: get('pending'), failed: get('failed'), sent: get('sent') };
+  },
+
   count(): number {
     return (db.prepare('SELECT COUNT(*) AS n FROM orders').get() as { n: number }).n;
   },

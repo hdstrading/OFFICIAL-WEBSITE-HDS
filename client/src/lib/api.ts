@@ -241,6 +241,7 @@ export const adminApi = {
       depositsOutstanding: number;
       reviews: number;
       pendingReviews: number;
+      inventory: { pending: number; failed: number; sent: number };
     }>('/admin/stats'),
 
   products: () => request<{ products: Product[] }>('/admin/products'),
@@ -284,6 +285,24 @@ export const adminApi = {
   setReviewPublished: (id: string, published: boolean) =>
     patch<{ ok: true }>(`/admin/reviews/${encodeURIComponent(id)}`, { published }),
   deleteReview: (id: string) => del<{ ok: true }>(`/admin/reviews/${encodeURIComponent(id)}`),
+
+  inventoryBacklog: () =>
+    request<{
+      configured: boolean;
+      counts: { pending: number; failed: number; sent: number };
+      orders: Order[];
+    }>('/admin/inventory/backlog'),
+  inventoryPing: () =>
+    request<{ ok: boolean; system: string; warehouse_configured: boolean; time: string }>(
+      '/admin/inventory/ping',
+    ),
+  retryInventoryPush: (id: string) =>
+    post<{ order: Order }>(`/admin/inventory/orders/${encodeURIComponent(id)}/retry`, {}),
+  drainInventoryQueue: () =>
+    post<{ counts: { pending: number; failed: number; sent: number }; orders: Order[] }>(
+      '/admin/inventory/drain',
+      {},
+    ),
 
   integrations: () =>
     request<{

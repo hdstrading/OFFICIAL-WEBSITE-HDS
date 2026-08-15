@@ -14,6 +14,9 @@ import {
 } from '../db.js';
 import { currentAdmin, endSession, requireAdmin, startSession, verifyCredentials } from '../auth.js';
 import { bookLalamoveDelivery } from '../lib/delivery.js';
+import { ping as inventoryPing, InventoryError } from '../lib/inventory.js';
+import { drainQueue, retryPush } from '../lib/inventory-queue.js';
+import { inventoryConfigured } from '../env.js';
 import { newId } from '../lib/pricing.js';
 import {
   blockDateSchema,
@@ -94,6 +97,7 @@ adminRouter.get('/stats', (_req, res) => {
       .reduce((sum, b) => sum + b.depositAmount, 0),
     reviews: reviews.count(),
     pendingReviews: reviews.pendingCount(),
+    inventory: orders.inventoryCounts(),
   });
 });
 
@@ -265,6 +269,56 @@ adminRouter.post('/orders/:id/dispatch', async (req, res) => {
   res.json({ order: orders.byId(order.id) });
 });
 
+/* -------------------------------------------------------- inventory system */
+
+/** Orders that have not reached the warehouse, so staff can see and act. */
+adminRouter.get('/inventory/backlog', (_req, res) => {
+  res.json({
+    configured: inventoryConfigured,
+    counts: orders.inventoryCounts(),
+    orders: orders.pushBacklog(),
+  });
+});
+
+/** Proves the link and key work, without writing anything. */
+adminRouter.get('/inventory/ping', async (_req, res) => {
+  if (!inventoryConfigured) {
+    res.status(503).json({
+      error: 'The inventory system link is not configured. Set INVENTORY_API_URL and INVENTORY_API_KEY.',
+    });
+    return;
+  }
+  try {
+    const result = await inventoryPing();
+    res.json(result);
+  } catch (error) {
+    res.status(502).json({
+      error: error instanceof InventoryError ? error.message : 'Could not reach the inventory system.',
+    });
+  }
+});
+
+/** Retries one order immediately, ignoring its backoff. */
+adminRouter.post('/inventory/orders/:id/retry', async (req, res) => {
+  const result = await retryPush(req.params.id);
+  if (!result.ok) {
+    res.status(502).json({ error: result.error });
+    return;
+  }
+  res.json({ order: orders.byId(req.params.id) });
+});
+
+/** Works through everything currently due, rather than waiting for the timer. */
+adminRouter.post('/inventory/drain', async (_req, res) => {
+  if (!inventoryConfigured) {
+    res.status(503).json({ error: 'The inventory system link is not configured.' });
+    return;
+  }
+  // Staff asked for this explicitly, so ignore any retry timer still running.
+  await drainQueue({ ignoreBackoff: true });
+  res.json({ counts: orders.inventoryCounts(), orders: orders.pushBacklog() });
+});
+
 /* ------------------------------------------------------------------- quotes */
 
 adminRouter.get('/quotes', (_req, res) => res.json({ quotes: quotes.all() }));
@@ -432,6 +486,11 @@ adminRouter.get('/integrations', (_req, res) => {
       email: { name: 'SMTP', configured: Boolean(env.smtp.host && env.smtp.user) },
       lalamove: { configured: Boolean(env.lalamove.apiKey && env.lalamove.apiSecret), mode: env.lalamove.baseUrl.includes('sandbox') ? 'sandbox' : 'live' },
       transportify: { configured: Boolean(env.transportify.apiKey) },
+      inventory: {
+        name: 'Inventory system',
+        configured: inventoryConfigured,
+        mode: env.inventory.pushOrders ? 'pushing orders' : 'push disabled',
+      },
       zoho: { configured: env.zoho.enabled },
     },
   });

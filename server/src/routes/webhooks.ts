@@ -4,6 +4,7 @@ import { env } from '../env.js';
 import { bookingConfirmationEmail, orderConfirmationEmail } from '../lib/emails.js';
 import { sendMailInBackground } from '../lib/mailer.js';
 import { parseWebhookEvent, verifyWebhookSignature } from '../lib/payments.js';
+import { queueOrderPush } from '../lib/inventory-queue.js';
 
 export const webhookRouter = Router();
 
@@ -55,6 +56,10 @@ webhookRouter.post('/paymongo', raw({ type: '*/*', limit: '1mb' }), (req, res) =
     if (orders.markPaid(order.id)) {
       const paid = orders.byReference(event.reference)!;
       console.info(`Order ${paid.reference} marked paid.`);
+
+      // Now that the money has landed, the warehouse can have it. Idempotent
+      // on our reference, so an order already sent as COD is not duplicated.
+      queueOrderPush(paid);
       sendMailInBackground({
         to: paid.email,
         subject: `Payment received for order ${paid.reference}`,

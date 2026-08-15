@@ -47,6 +47,8 @@ export interface RatingSummary {
 export interface Product {
   id: string;
   name: string;
+  /** Must match the SKU in the inventory system — that is how orders are matched. */
+  sku: string;
   category: ProductCategory;
   subcategory: string;
   description: string;
@@ -127,6 +129,7 @@ export interface DeliveryOption {
 
 export interface OrderItem {
   productId: string;
+  sku: string;
   name: string;
   unit: string;
   unitPrice: number;
@@ -160,7 +163,14 @@ export interface Order {
   total: number;
   createdAt: string;
   paidAt?: string | null;
+  inventoryStatus: InventoryPushStatus;
+  inventoryRef?: string | null;
+  inventoryError?: string | null;
+  inventoryAttempts: number;
 }
+
+/** Whether an order has reached the inventory system as a sales order. */
+export type InventoryPushStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 
 export type BookingStatus = 'Confirmed' | 'Pending Callback' | 'Completed' | 'Cancelled';
 

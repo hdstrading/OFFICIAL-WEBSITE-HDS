@@ -3,6 +3,7 @@ import type { Product, Service } from '../types.js';
 export const PRODUCTS: Product[] = [
   {
     id: 'prod-luxe-san',
+    sku: 'HDS-LUXE-SAN',
     name: 'Luxe-San Hospital-Grade Disinfectant Concentrate',
     category: 'hygiene_care',
     subcategory: 'Sanitation Chemicals',
@@ -27,6 +28,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'prod-aqua-chlorine',
+    sku: 'HDS-AQUA-CHLORINE',
     name: 'Crystal-Pool 90% Trichlor Chlorine Tablets',
     category: 'pool_care',
     subcategory: 'Pool Treatment',
@@ -51,6 +53,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'prod-bio-pure',
+    sku: 'HDS-BIO-PURE',
     name: 'Bio-Pure Eco Multi-Surface Sanitizer',
     category: 'kitchen_housekeeping',
     subcategory: 'Sanitation Chemicals',
@@ -75,6 +78,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'equip-silentstream',
+    sku: 'HDS-SILENTSTREAM',
     name: 'HDS SilentStream Pro HEPA Dry/Wet Vacuum',
     category: 'equipment',
     subcategory: 'Sanitation Machinery',
@@ -99,6 +103,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'equip-optimus-scrub',
+    sku: 'HDS-OPTIMUS-SCRUB',
     name: 'Optimus Floor Scrubber & Polisher',
     category: 'equipment',
     subcategory: 'Sanitation Machinery',
@@ -123,6 +128,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'equip-purewave',
+    sku: 'HDS-PUREWAVE',
     name: 'PureWave Dry Thermal Microsteam Generator',
     category: 'equipment',
     subcategory: 'Sanitation Machinery',
@@ -147,6 +153,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'tool-microfiber',
+    sku: 'HDS-MICROFIBER',
     name: 'AcroClean Antibacterial Microfiber Mop Set',
     category: 'janitorial_tools',
     subcategory: 'Manual Utilities',
@@ -171,6 +178,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'tool-pool-skimmer',
+    sku: 'HDS-POOL-SKIMMER',
     name: 'Pro-Sweep Carbon telesco-Pole & Leaf Net',
     category: 'pool_care',
     subcategory: 'Pool Accessories',
@@ -195,6 +203,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: 'tool-bucket-wringer',
+    sku: 'HDS-BUCKET-WRINGER',
     name: 'Pro-Janitor 36-Liter Structural Foam Bucket',
     category: 'janitorial_tools',
     subcategory: 'Manual Utilities',

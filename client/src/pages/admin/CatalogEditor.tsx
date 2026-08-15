@@ -170,7 +170,14 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
                   className="h-12 w-12 rounded-lg object-cover bg-slate-100 shrink-0"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-slate-900 truncate">{item.name}</p>
+                  <p className="font-semibold text-slate-900 truncate">
+                    {item.name}
+                    {isProduct && (item as Product).sku && (
+                      <span className="ml-2 font-mono text-[11px] font-normal text-slate-400">
+                        {(item as Product).sku}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-slate-500">
                     {isProduct
                       ? PRODUCT_CATEGORY_LABELS[(item as Product).category]
@@ -211,6 +218,7 @@ function ProductForm({
   onError: (err: unknown) => void;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
+  const [sku, setSku] = useState(initial?.sku ?? '');
   const [category, setCategory] = useState<ProductCategory>(initial?.category ?? 'miscellaneous');
   const [subcategory, setSubcategory] = useState(initial?.subcategory ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
@@ -234,6 +242,7 @@ function ProductForm({
 
     const payload = {
       name,
+      sku,
       category,
       subcategory,
       description,
@@ -267,13 +276,23 @@ function ProductForm({
     <form onSubmit={save} noValidate className="space-y-4">
       {error && <Alert tone="error">{error}</Alert>}
 
-      <TextField
-        label="Product name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        error={fieldErrors.name}
-        required
-      />
+      <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
+        <TextField
+          label="Product name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          error={fieldErrors.name}
+          required
+        />
+        <TextField
+          label="SKU"
+          value={sku}
+          onChange={(e) => setSku(e.target.value.toUpperCase())}
+          error={fieldErrors.sku}
+          placeholder="HDS-LUXE-SAN"
+          hint="Must match the inventory system exactly."
+        />
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <SelectField

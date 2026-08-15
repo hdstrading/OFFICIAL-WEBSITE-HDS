@@ -11,6 +11,7 @@ import { adminRouter } from './routes/admin.js';
 import { publicRouter } from './routes/public.js';
 import { webhookRouter } from './routes/webhooks.js';
 import { buildRobotsTxt, buildSitemapXml } from './lib/seo.js';
+import { startInventoryWorker } from './lib/inventory-queue.js';
 
 const app = express();
 
@@ -144,6 +145,10 @@ app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
 /* -------------------------------------------------------------------- start */
 
 seedIfEmpty();
+
+// Delivers paid orders to the inventory system, retrying anything that did not
+// get through while it was unreachable.
+startInventoryWorker();
 
 // Expired admin sessions are cleaned up hourly rather than left to accumulate.
 sessions.purgeExpired();

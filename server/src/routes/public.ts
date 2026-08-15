@@ -36,6 +36,7 @@ import {
   PaymentError,
 } from '../lib/payments.js';
 import { generateReference, money, newId, priceCart, PricingError } from '../lib/pricing.js';
+import { queueOrderPush } from '../lib/inventory-queue.js';
 import {
   bookingInputSchema,
   checkoutSchema,
@@ -252,6 +253,10 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
       vat: priced.vat,
       total,
       createdAt: new Date().toISOString(),
+      // Set properly by queueOrderPush below, once we know whether this order
+      // is payable now or waiting on the gateway.
+      inventoryStatus: 'pending',
+      inventoryAttempts: 0,
     };
 
     orders.insert(order);
@@ -277,6 +282,10 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
         throw error;
       }
     }
+
+    // Bank transfer and cash on delivery reach the warehouse now; card and
+    // e-wallet orders wait for the payment webhook.
+    queueOrderPush(order);
 
     sendMailInBackground({
       to: order.email,

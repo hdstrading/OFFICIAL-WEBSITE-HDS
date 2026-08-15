@@ -21,6 +21,11 @@ export type ServiceCategory = 'general_sanitation' | 'pool_maintenance' | 'speci
 export interface Product {
   id: string;
   name: string;
+  /**
+   * Stock-keeping unit. This is the join to the inventory system — an order
+   * line is matched there by SKU, so a product without one cannot be pushed.
+   */
+  sku: string;
   category: ProductCategory;
   subcategory: string;
   description: string;
@@ -59,6 +64,8 @@ export interface DiscountCode {
 
 export interface QuoteItem {
   productId: string;
+  /** Snapshot of the SKU at the time of ordering, for the inventory push. */
+  sku: string;
   name: string;
   unit: string;
   unitPrice: number;
@@ -221,6 +228,8 @@ export interface DeliveryOption {
 
 export interface OrderItem {
   productId: string;
+  /** Snapshot of the SKU at the time of ordering, for the inventory push. */
+  sku: string;
   name: string;
   unit: string;
   unitPrice: number;
@@ -256,4 +265,18 @@ export interface Order {
   total: number;
   createdAt: string;
   paidAt?: string | null;
+
+  /** Whether this order has reached the inventory system as a sales order. */
+  inventoryStatus: InventoryPushStatus;
+  /** The sales order number the inventory system assigned, once accepted. */
+  inventoryRef?: string | null;
+  /** Why the last attempt failed, shown to staff so they can act on it. */
+  inventoryError?: string | null;
+  inventoryAttempts: number;
 }
+
+/**
+ * `skipped` covers orders placed while the link was switched off or
+ * unconfigured — distinct from `failed`, which means we tried and could not.
+ */
+export type InventoryPushStatus = 'pending' | 'sent' | 'failed' | 'skipped';

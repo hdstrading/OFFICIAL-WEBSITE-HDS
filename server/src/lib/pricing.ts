@@ -65,6 +65,9 @@ export function priceCart(
     const lineTotal = money(product.price * line.quantity);
     items.push({
       productId: product.id,
+      // Captured now rather than looked up at push time: a product renamed or
+      // re-SKU'd later must not change what an existing order says it was.
+      sku: product.sku ?? '',
       name: product.name,
       unit: product.unit,
       unitPrice: product.price,

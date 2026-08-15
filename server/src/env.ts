@@ -142,6 +142,25 @@ export const env = {
     leadTimeDays: Number(process.env.BOOKING_LEAD_TIME_DAYS ?? 1),
   },
 
+  /**
+   * The inventory system at inventory.hdstradingopc.com, which owns stock and
+   * receives paid orders as sales orders. Leave the URL or key blank and the
+   * website simply does not push — everything else works unchanged.
+   */
+  inventory: {
+    apiUrl: (process.env.INVENTORY_API_URL ?? '').replace(/\/+$/, ''),
+    apiKey: process.env.INVENTORY_API_KEY ?? '',
+    /** Sent as X-HDS-Client so the inventory audit log shows who called. */
+    clientName: process.env.INVENTORY_CLIENT_NAME ?? 'website',
+    /** Set false to keep the link configured but stop sending, e.g. during a stock take. */
+    pushOrders: bool(process.env.INVENTORY_PUSH_ORDERS, true),
+    /** Which warehouse fulfils website orders. Blank uses the inventory system's primary. */
+    warehouseId: process.env.INVENTORY_WAREHOUSE_ID ?? '',
+    /** How often the retry worker looks for orders that have not reached the warehouse. */
+    retryIntervalMinutes: Number(process.env.INVENTORY_RETRY_MINUTES ?? 5),
+    timeoutMs: Number(process.env.INVENTORY_TIMEOUT_MS ?? 15_000),
+  },
+
   zoho: {
     enabled: bool(process.env.ZOHO_SYNC_ENABLED, false),
     clientId: process.env.ZOHO_CLIENT_ID ?? '',
@@ -162,6 +181,9 @@ export const smtpConfigured = Boolean(env.smtp.host && env.smtp.user && env.smtp
 
 /** Online card/e-wallet payments are only offered when the gateway has keys. */
 export const paymentsConfigured = Boolean(env.paymongo.secretKey);
+
+/** The link is usable only with both an address and a key. */
+export const inventoryConfigured = Boolean(env.inventory.apiUrl && env.inventory.apiKey);
 
 export const lalamoveConfigured = Boolean(env.lalamove.apiKey && env.lalamove.apiSecret);
 export const transportifyConfigured = Boolean(env.transportify.apiKey);
