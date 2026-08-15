@@ -33,6 +33,7 @@ export interface CatalogSyncResult {
     stockTo?: number | null;
   }[];
   withoutSku: { id: string; name: string }[];
+  excluded: { sku: string; name: string }[];
   error?: string;
 }
 

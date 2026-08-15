@@ -139,6 +139,9 @@ export async function drainQueue({ ignoreBackoff = false } = {}): Promise<void> 
   }
 }
 
+/** How many order references one status request may carry, matching the cap at the other end. */
+const STATUS_BATCH_SIZE = 200;
+
 /**
  * Brings warehouse progress back to the customer.
  *
@@ -157,20 +160,28 @@ export async function syncOrderStatuses(): Promise<void> {
   if (open.length === 0) return;
 
   try {
-    const { orders: statuses } = await fetchOrderStatuses(open.map((o) => o.reference));
+    // Asked for in batches: the inventory system caps a status request at 200
+    // references so no caller can build an unbounded query, and a backlog after
+    // an outage can easily be longer than that. Sending the lot in one request
+    // would fail the whole poll rather than the excess.
+    for (let start = 0; start < open.length; start += STATUS_BATCH_SIZE) {
+      const batch = open.slice(start, start + STATUS_BATCH_SIZE);
+      const { orders: statuses } = await fetchOrderStatuses(batch.map((o) => o.reference));
 
-    for (const remote of statuses) {
-      const local = open.find((o) => o.reference === remote.reference);
-      if (!local) continue;
+      for (const remote of statuses) {
+        const local = batch.find((o) => o.reference === remote.reference);
+        if (!local) continue;
 
-      const mapped = mapInventoryStatus(remote.status);
-      if (!mapped || mapped === local.orderStatus) continue;
+        const mapped = mapInventoryStatus(remote.status);
+        if (!mapped || mapped === local.orderStatus) continue;
 
-      orders.setOrderStatus(local.id, mapped);
-      console.info(
-        `Order ${local.reference}: ${local.orderStatus} → ${mapped} ` +
-          `(warehouse says ${remote.status})`,
-      );
+        orders.setOrderStatus(local.id, mapped);
+        console.info(
+          `Order ${local.reference}: ${local.orderStatus} → ${mapped} ` +
+            `(warehouse says ${remote.status}` +
+            `${remote.pick_status ? `, pick list ${remote.pick_status}` : ''})`,
+        );
+      }
     }
   } catch (error) {
     const message = (error as Error).message;

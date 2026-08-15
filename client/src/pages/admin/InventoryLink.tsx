@@ -246,6 +246,19 @@ export default function InventoryLink({ onError }: { onError: (err: unknown) => 
                   </ul>
                 )}
 
+                {sync.excluded.length > 0 && (
+                  <div className="mt-3">
+                    <Alert
+                      tone="info"
+                      title={`${sync.excluded.length} item(s) held back from the shop`}
+                    >
+                      Offered by the inventory system but kept off the website by
+                      INVENTORY_SKU_EXCLUDE:{' '}
+                      {sync.excluded.map((item) => `${item.name} (${item.sku})`).join(', ')}.
+                    </Alert>
+                  </div>
+                )}
+
                 {sync.withoutSku.length > 0 && (
                   <div className="mt-3">
                     <Alert tone="warning" title={`${sync.withoutSku.length} product(s) have no SKU`}>

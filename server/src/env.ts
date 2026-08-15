@@ -163,6 +163,19 @@ export const env = {
     syncIntervalMinutes: Number(process.env.INVENTORY_SYNC_MINUTES ?? 15),
 
     /**
+     * SKUs that must never appear in the shop, whatever the inventory system says.
+     *
+     * For the test and sample items every warehouse accumulates. They have to
+     * stay sellable in the inventory system to be useful for testing, so the
+     * Sales Information tick cannot be the control — this is. Matched
+     * case-insensitively, like every other SKU comparison here.
+     */
+    skuExclude: (process.env.INVENTORY_SKU_EXCLUDE ?? '')
+      .split(',')
+      .map((sku) => sku.trim().toLowerCase())
+      .filter(Boolean),
+
+    /**
      * Whether `selling_price` in the inventory system already contains VAT.
      *
      * This matters by exactly 12%. The website stores prices VAT-exclusive and

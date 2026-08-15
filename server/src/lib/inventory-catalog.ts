@@ -102,6 +102,8 @@ export interface CatalogSyncResult {
   changes: CatalogChange[];
   /** Website products with no SKU — invisible to the sync, and unsellable through it. */
   withoutSku: { id: string; name: string }[];
+  /** Offered by the inventory system but held back by INVENTORY_SKU_EXCLUDE. */
+  excluded: { sku: string; name: string }[];
   error?: string;
 }
 
@@ -125,6 +127,7 @@ export async function syncCatalog({ dryRun = false } = {}): Promise<CatalogSyncR
     unchanged: 0,
     changes: [],
     withoutSku: [],
+    excluded: [],
   };
 
   if (!inventoryConfigured) {
@@ -145,7 +148,18 @@ export async function syncCatalog({ dryRun = false } = {}): Promise<CatalogSyncR
 
   const result: CatalogSyncResult = { ...empty, ok: true, asOf: remote.as_of };
 
-  for (const item of remote.items) {
+  // Held-back SKUs are treated as though the inventory system never offered
+  // them: they are not imported, and one already in the shop from before it was
+  // excluded falls through to the hide pass below. Reported rather than dropped
+  // silently, so an exclusion nobody remembers setting is visible in a preview.
+  const blocked = new Set(env.inventory.skuExclude);
+  const offered = remote.items.filter((item) => {
+    if (!blocked.has(item.sku.trim().toLowerCase())) return true;
+    result.excluded.push({ sku: item.sku, name: item.name });
+    return false;
+  });
+
+  for (const item of offered) {
     const key = item.sku.trim().toLowerCase();
     if (!key) continue;
     seen.add(key);
