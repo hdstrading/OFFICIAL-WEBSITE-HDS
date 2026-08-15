@@ -26,6 +26,13 @@ export class InventoryError extends Error {
   }
 }
 
+/**
+ * The inventory system mounts every route under `/api`, so its integration
+ * endpoints live at `/api/integration/...`. Set INVENTORY_API_URL to the bare
+ * host — the prefix is added here rather than being something to remember.
+ */
+const API_PREFIX = '/api';
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!inventoryConfigured) {
     throw new InventoryError('The inventory system link is not configured.', true);
@@ -33,7 +40,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
   let response: Response;
   try {
-    response = await fetch(`${env.inventory.apiUrl}${path}`, {
+    response = await fetch(`${env.inventory.apiUrl}${API_PREFIX}${path}`, {
       ...init,
       headers: {
         Authorization: `Bearer ${env.inventory.apiKey}`,

@@ -140,10 +140,15 @@ It uses only helpers the file already imports (`stockOnHand`,
 `availableForSale`), adds no dependency, writes nothing, and changes no existing
 behaviour.
 
-**This is for you to review and apply, or to reject in favour of a different
-shape.** If you would rather it looked different — a `filter_by` parameter on
-the existing endpoint, different field names, extra fields — tell me and I will
-match the website to whatever you decide.
+**Applied** on the branch `feature/integration-catalog-endpoint` in the
+inventory repository, after review. Its 322-check suite passes unchanged, and
+the endpoint was exercised against a seeded database: an item with Sales
+Information unticked and an item with no SKU were both correctly omitted, while
+`/integration/stock` continued to return them.
+
+Note the mount point: every route in that application is mounted under `/api`,
+so the real paths are `/api/integration/catalog`, `/api/integration/orders` and
+so on. `INVENTORY_API_URL` is the bare host — the website adds the prefix.
 
 ---
 
