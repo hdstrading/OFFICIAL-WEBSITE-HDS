@@ -134,10 +134,6 @@ db.exec(`
     published        INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  CREATE INDEX IF NOT EXISTS idx_reviews_subject ON reviews (subject_type, subject_id, published);
-  CREATE INDEX IF NOT EXISTS idx_bookings_depref ON bookings (deposit_reference);
-
   CREATE TABLE IF NOT EXISTS orders (
     id                   TEXT PRIMARY KEY,
     reference            TEXT NOT NULL UNIQUE,
@@ -171,23 +167,12 @@ db.exec(`
     /* Backoff: the worker ignores an order until this time has passed. */
     inventory_next_try   TEXT
   );
-
-  CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_orders_invstatus ON orders (inventory_status);
-  CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
-  CREATE INDEX IF NOT EXISTS idx_orders_payref  ON orders (payment_reference);
-
   CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     email      TEXT NOT NULL,
     expires_at INTEGER NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
-
-  CREATE INDEX IF NOT EXISTS idx_quotes_created   ON quotes (created_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_bookings_created ON bookings (created_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_bookings_date    ON bookings (preferred_date);
-  CREATE INDEX IF NOT EXISTS idx_sessions_expiry  ON sessions (expires_at);
 `);
 
 /* --------------------------------------------------------------- migrations */
@@ -203,23 +188,72 @@ db.exec(`
  * Safe to run on every boot: SQLite raises "duplicate column name" when it is
  * already present, which is the success case on the second and later runs.
  */
-function addColumn(table: string, column: string, definition: string) {
+function addColumn(table: string, column: string, definition: string): boolean {
   try {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     console.info(`Migrated: added ${table}.${column}`);
+    return true;
   } catch (error) {
     const message = (error as Error).message;
     if (!message.includes('duplicate column name')) throw error;
+    return false;
   }
 }
 
 // Added when the inventory system link was introduced.
 addColumn('products', 'sku', "TEXT NOT NULL DEFAULT ''");
-addColumn('orders', 'inventory_status', "TEXT NOT NULL DEFAULT 'pending'");
+const inventoryColumnIsNew = addColumn('orders', 'inventory_status', "TEXT NOT NULL DEFAULT 'pending'");
 addColumn('orders', 'inventory_ref', 'TEXT');
 addColumn('orders', 'inventory_error', 'TEXT');
 addColumn('orders', 'inventory_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('orders', 'inventory_next_try', 'TEXT');
+
+/**
+ * Orders that predate the link are marked as skipped, not pending.
+ *
+ * The column defaults to 'pending' so that new orders queue for delivery, but
+ * applying that default to history would mean every order ever placed floods
+ * into the warehouse as a fresh sales order the first time the integration is
+ * switched on — for goods that were shipped weeks ago.
+ *
+ * This runs once, in the same boot that adds the column, when by definition
+ * every existing row predates the link. Staff can still send any one of them
+ * by hand from the Warehouse tab.
+ */
+if (inventoryColumnIsNew) {
+  const updated = db
+    .prepare(
+      `UPDATE orders
+          SET inventory_status = 'skipped',
+              inventory_error = 'Placed before the inventory system link was set up.'`,
+    )
+    .run().changes;
+  if (updated > 0) {
+    console.info(`Migrated: marked ${updated} existing order(s) as predating the inventory link.`);
+  }
+}
+
+/**
+ * Indexes come last, after every migration has run.
+ *
+ * They live here rather than beside the CREATE TABLE statements because an
+ * index names a column, and on a database that already exists the table is not
+ * recreated — so an index on a column added later would run before that column
+ * did. SQLite raises "no such column" and the process dies on startup, taking
+ * a working site down at the moment it is upgraded.
+ */
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_reviews_subject ON reviews (subject_type, subject_id, published);
+  CREATE INDEX IF NOT EXISTS idx_bookings_depref ON bookings (deposit_reference);
+  CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_orders_invstatus ON orders (inventory_status);
+  CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
+  CREATE INDEX IF NOT EXISTS idx_orders_payref  ON orders (payment_reference);
+  CREATE INDEX IF NOT EXISTS idx_quotes_created   ON quotes (created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_bookings_created ON bookings (created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_bookings_date    ON bookings (preferred_date);
+  CREATE INDEX IF NOT EXISTS idx_sessions_expiry  ON sessions (expires_at);
+`);
 
 /* ------------------------------------------------------------------ mappers */
 
