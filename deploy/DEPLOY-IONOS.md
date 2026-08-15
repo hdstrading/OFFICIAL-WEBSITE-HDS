@@ -633,6 +633,36 @@ systemctl restart hdstradingopc
 of every directory along the path, which shows immediately where the traversal
 is blocked.
 
+**A subdomain shows `SSL_ERROR_BAD_CERT_DOMAIN` with no way to bypass it**
+Two causes, often together.
+
+The certificate covers `hdstradingopc.com` and `www.hdstradingopc.com` only, so
+any other name on this server fails to match. If the subdomain is unused —
+`api`, left over from evaluating the split setup — delete its DNS record;
+otherwise add it to the certificate:
+
+```bash
+certbot certonly --webroot -w /var/www/certbot \
+  -d hdstradingopc.com -d www.hdstradingopc.com -d api.hdstradingopc.com
+```
+
+The "no way to bypass" part is HSTS. If the header on the main site includes
+`includeSubDomains`, browsers enforce HTTPS on *every* subdomain for a year —
+including ones on other servers, like `crm` or `payroll`. Any of those served
+over plain HTTP becomes unreachable, and visitors cannot click through the
+warning. The shipped config omits `includeSubDomains` for that reason. Check
+what yours sends:
+
+```bash
+curl -sI https://hdstradingopc.com | grep -i strict-transport
+```
+
+If it still says `includeSubDomains`, update `/etc/nginx/sites-available/hdstradingopc`
+from `deploy/nginx.conf` and reload. Browsers pick up the corrected policy the
+next time someone visits the main site; until then, affected visitors can clear
+it via `about:networking#hsts` in Firefox or `chrome://net-internals/#hsts` in
+Chrome.
+
 **`fatal: detected dubious ownership in repository`**
 Git refuses to touch a repository owned by someone other than the user running
 it. This means the checkout got `chown`ed to `hds` at some point — an earlier
