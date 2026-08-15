@@ -274,6 +274,8 @@ export interface Order {
   discountAmount: number;
   deliveryFee: number;
   vat: number;
+  /** What the payment gateway costs us, passed on. Zero for deposit and COD. */
+  processingFee: number;
   total: number;
   createdAt: string;
   paidAt?: string | null;

@@ -33,6 +33,8 @@ export interface PaymentMethodOption {
   instant: boolean;
   available: boolean;
   unavailableReason?: string;
+  /** Gateway fee added to the total when this method is chosen, as a percentage. */
+  feePercent: number;
 }
 
 /**
@@ -44,9 +46,12 @@ export function availablePaymentMethods(): PaymentMethodOption[] {
     ? undefined
     : 'Card and e-wallet payments are being activated. Please use bank transfer or cash on delivery for now.';
 
+  const fee = (method: string) => env.paymentFeePercent[method] ?? 0;
+
   return [
     {
       id: 'card',
+      feePercent: fee('card'),
       label: 'Credit or Debit Card',
       description: 'Visa, Mastercard and JCB. Secured by our payment provider.',
       instant: true,
@@ -55,6 +60,7 @@ export function availablePaymentMethods(): PaymentMethodOption[] {
     },
     {
       id: 'gcash',
+      feePercent: fee('gcash'),
       label: 'GCash',
       description: 'Pay from your GCash wallet. You will be redirected to confirm.',
       instant: true,
@@ -63,6 +69,7 @@ export function availablePaymentMethods(): PaymentMethodOption[] {
     },
     {
       id: 'maya',
+      feePercent: fee('maya'),
       label: 'Maya',
       description: 'Pay from your Maya wallet. You will be redirected to confirm.',
       instant: true,
@@ -71,6 +78,7 @@ export function availablePaymentMethods(): PaymentMethodOption[] {
     },
     {
       id: 'online_banking',
+      feePercent: fee('online_banking'),
       label: 'Online Bank Transfer',
       description: 'BPI and UnionBank direct online banking.',
       instant: true,
@@ -79,6 +87,7 @@ export function availablePaymentMethods(): PaymentMethodOption[] {
     },
     {
       id: 'bank_transfer',
+      feePercent: fee('bank_transfer'),
       label: 'Manual Bank Deposit / Transfer',
       description:
         'We email you our bank and e-wallet details. Send your proof of payment and we release your order.',
@@ -87,6 +96,7 @@ export function availablePaymentMethods(): PaymentMethodOption[] {
     },
     {
       id: 'cod',
+      feePercent: fee('cod'),
       label: 'Cash on Delivery',
       description:
         'Pay our rider on arrival. Available within Metro Manila and Rizal for orders up to ₱20,000.',
@@ -137,7 +147,7 @@ function buildLineItems(order: Order): GatewayLineItem[] {
     {
       name: `HDS Trading order ${order.reference} (${order.items.length} item${
         order.items.length === 1 ? '' : 's'
-      }, incl. VAT and delivery)`,
+      }, incl. VAT, delivery${order.processingFee > 0 ? ' and processing fee' : ''})`,
       quantity: 1,
       amount: expectedTotal,
       currency: 'PHP',
@@ -161,6 +171,17 @@ function buildLineItems(order: Order): GatewayLineItem[] {
       name: `Delivery — ${order.delivery.label}`,
       quantity: 1,
       amount: toCentavos(order.deliveryFee),
+      currency: 'PHP',
+    });
+  }
+  if (order.processingFee > 0) {
+    // Named on the gateway's own page, where the customer is looking at the
+    // amount about to leave their account and is least willing to find a
+    // surcharge they cannot account for.
+    itemised.push({
+      name: 'Payment processing fee',
+      quantity: 1,
+      amount: toCentavos(order.processingFee),
       currency: 'PHP',
     });
   }

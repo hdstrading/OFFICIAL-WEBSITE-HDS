@@ -212,6 +212,10 @@ addColumn('orders', 'inventory_ref', 'TEXT');
 addColumn('orders', 'inventory_error', 'TEXT');
 addColumn('orders', 'inventory_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('orders', 'inventory_next_try', 'TEXT');
+// Orders placed before the gateway fee was introduced carry none, and their
+// stored totals already reflect that — a default of 0 keeps them arithmetically
+// intact rather than making an old order look as though a fee went missing.
+addColumn('orders', 'processing_fee', 'REAL NOT NULL DEFAULT 0');
 
 /**
  * Orders that predate the link are marked as skipped, not pending.
@@ -926,6 +930,7 @@ type OrderRow = {
   discount_amount: number;
   delivery_fee: number;
   vat: number;
+  processing_fee: number;
   total: number;
   created_at: string;
   paid_at: string | null;
@@ -958,6 +963,7 @@ const toOrder = (r: OrderRow): Order => ({
   discountAmount: r.discount_amount,
   deliveryFee: r.delivery_fee,
   vat: r.vat,
+  processingFee: r.processing_fee ?? 0,
   total: r.total,
   createdAt: r.created_at,
   paidAt: r.paid_at,
@@ -973,11 +979,11 @@ export const orders = {
       `INSERT INTO orders (id, reference, customer_name, institution_name, email, phone, items,
                            address, delivery, payment_method, payment_status, order_status,
                            payment_reference, payment_url, notes, discount_code,
-                           subtotal, discount_amount, delivery_fee, vat, total, created_at)
+                           subtotal, discount_amount, delivery_fee, vat, processing_fee, total, created_at)
        VALUES (@id, @reference, @customer_name, @institution_name, @email, @phone, @items,
                @address, @delivery, @payment_method, @payment_status, @order_status,
                @payment_reference, @payment_url, @notes, @discount_code,
-               @subtotal, @discount_amount, @delivery_fee, @vat, @total, @created_at)`,
+               @subtotal, @discount_amount, @delivery_fee, @vat, @processing_fee, @total, @created_at)`,
     ).run({
       id: o.id,
       reference: o.reference,
@@ -999,6 +1005,7 @@ export const orders = {
       discount_amount: o.discountAmount,
       delivery_fee: o.deliveryFee,
       vat: o.vat,
+      processing_fee: o.processingFee,
       total: o.total,
       created_at: o.createdAt,
     });

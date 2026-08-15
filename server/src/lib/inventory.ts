@@ -159,6 +159,11 @@ export function buildSalesOrderPayload(order: Order) {
     tax_mode: 'exclusive' as const,
     discount: money(order.discountAmount * (1 + VAT_RATE)),
     shipping_fee: order.deliveryFee,
+    // The gateway fee the customer paid. Sent as an adjustment rather than
+    // folded into shipping, which would quietly corrupt every delivery-cost
+    // report the warehouse runs. Ignored by inventory systems that do not take
+    // an adjustment, in which case the total check below reports the shortfall.
+    adjustment: order.processingFee,
     delivery_method: order.delivery.label,
     payment_terms: PAYMENT_TERMS[order.paymentMethod],
     notes: buildNotes(order),
@@ -196,7 +201,7 @@ export function expectedInventoryTotal(order: Order): number {
   const lineTotal = order.items.reduce((sum, item) => sum + money(item.unitPrice * item.quantity), 0);
   const tax = money(lineTotal * VAT_RATE);
   const discount = money(order.discountAmount * (1 + VAT_RATE));
-  return money(lineTotal - discount + order.deliveryFee + tax);
+  return money(lineTotal - discount + order.deliveryFee + order.processingFee + tax);
 }
 
 export interface SalesOrderResult {
@@ -232,9 +237,15 @@ export async function pushOrder(order: Order): Promise<SalesOrderResult> {
   // correct a total, whereas rejecting it would leave them unaware of it.
   const expected = expectedInventoryTotal(order);
   if (typeof result.total === 'number' && Math.abs(result.total - expected) > 0.01) {
+    const short = money(expected - result.total);
+    const looksLikeTheFee = order.processingFee > 0 && Math.abs(short - order.processingFee) <= 0.01;
     console.warn(
       `Sales order ${result.so_number} totals ${result.total} but order ${order.reference} ` +
-        `was charged ${order.total} (expected ${expected}). Check the tax and discount mapping.`,
+        `was charged ${order.total} (expected ${expected}).` +
+        (looksLikeTheFee
+          ? ` The difference is exactly the ${money(order.processingFee)} processing fee, so this ` +
+            'inventory system is not yet accepting the adjustment field.'
+          : ' Check the tax and discount mapping.'),
     );
   }
 

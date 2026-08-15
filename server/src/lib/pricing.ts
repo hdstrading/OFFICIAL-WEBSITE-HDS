@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { discounts, products } from '../db.js';
-import type { DiscountCode, OrderItem } from '../types.js';
+import { env } from '../env.js';
+import type { DiscountCode, OrderItem, PaymentMethod } from '../types.js';
 
 /** Standard Philippine VAT. Prices in the catalog are VAT-exclusive. */
 export const VAT_RATE = 0.12;
@@ -123,6 +124,24 @@ export function priceCart(
     vat,
     goodsTotal: money(net + vat),
   };
+}
+
+/**
+ * The gateway's cut, passed on to whoever chose to pay that way.
+ *
+ * Charged per method because the methods do not cost the same: cards and online
+ * banking carry the heaviest gateway fees, e-wallets less. Bank deposit and cash
+ * on delivery never reach the gateway at all, so they carry nothing — which also
+ * leaves customers a way to avoid the fee entirely.
+ *
+ * Taken on the full amount payable, delivery included, because that is what the
+ * gateway takes its percentage of. Not VAT-rated again: it is a pass-through of
+ * a cost already incurred, not another good sold.
+ */
+export function processingFee(method: PaymentMethod, payable: number): number {
+  const percent = env.paymentFeePercent[method] ?? 0;
+  if (!percent) return 0;
+  return money(payable * (percent / 100));
 }
 
 export const formatPeso = (value: number) =>

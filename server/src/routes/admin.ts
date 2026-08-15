@@ -468,13 +468,13 @@ adminRouter.get('/export/orders.csv', (_req, res) => {
     `hds-orders-${new Date().toISOString().slice(0, 10)}.csv`,
     [
       'Reference', 'Date', 'Customer', 'Institution', 'Email', 'Phone', 'Items',
-      'Subtotal', 'Discount', 'Delivery fee', 'VAT', 'Total',
+      'Subtotal', 'Discount', 'Delivery fee', 'VAT', 'Processing fee', 'Total',
       'Payment method', 'Payment status', 'Order status', 'Delivery', 'Address',
     ],
     orders.all().map((o) => [
       o.reference, o.createdAt, o.customerName, o.institutionName ?? '', o.email, o.phone,
       o.items.map((i) => `${i.name} x${i.quantity}`).join(' | '),
-      o.subtotal, o.discountAmount, o.deliveryFee, o.vat, o.total,
+      o.subtotal, o.discountAmount, o.deliveryFee, o.vat, o.processingFee, o.total,
       o.paymentMethod, o.paymentStatus, o.orderStatus, o.delivery.label,
       [o.address.line1, o.address.barangay, o.address.city, o.address.province].filter(Boolean).join(', '),
     ]),

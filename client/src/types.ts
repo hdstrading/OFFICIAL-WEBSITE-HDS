@@ -121,6 +121,8 @@ export interface PaymentMethodOption {
   instant: boolean;
   available: boolean;
   unavailableReason?: string;
+  /** Gateway fee added to the total when this method is chosen, as a percentage. */
+  feePercent: number;
 }
 
 export interface DeliveryAddress {

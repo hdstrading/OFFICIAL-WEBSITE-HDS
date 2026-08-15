@@ -134,7 +134,14 @@ export default function CheckoutPage() {
   const net = Math.max(0, subtotal - discountAmount);
   const vat = Math.round(net * 0.12 * 100) / 100;
   const deliveryFee = selectedDelivery?.fee ?? 0;
-  const total = Math.round((net + vat + deliveryFee) * 100) / 100;
+  const payable = Math.round((net + vat + deliveryFee) * 100) / 100;
+
+  // The gateway's cut depends on how the customer chooses to pay, so it can only
+  // be worked out once a method is picked — and it has to be visible the moment
+  // it is, rather than appearing for the first time on the payment page.
+  const feePercent = paymentMethods.find((m) => m.id === paymentMethod)?.feePercent ?? 0;
+  const processingFee = Math.round(payable * (feePercent / 100) * 100) / 100;
+  const total = Math.round((payable + processingFee) * 100) / 100;
 
   const codBlocked = paymentMethod === 'cod' && total > 20_000;
 
@@ -479,10 +486,21 @@ export default function CheckoutPage() {
                           <p className="font-bold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
                             {method.label}
                             {method.instant && <Badge tone="emerald">Instant</Badge>}
+                            {method.feePercent > 0 ? (
+                              <Badge tone="amber">+{method.feePercent}% fee</Badge>
+                            ) : (
+                              <Badge tone="slate">No fee</Badge>
+                            )}
                           </p>
                           <p className="mt-0.5 text-xs text-slate-600 leading-relaxed">
                             {method.available ? method.description : method.unavailableReason}
                           </p>
+                          {method.available && method.feePercent > 0 && payable > 0 && (
+                            <p className="mt-1 text-xs font-semibold text-amber-800">
+                              Processing fee on this order:{' '}
+                              {peso(Math.round(payable * (method.feePercent / 100) * 100) / 100)}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -616,10 +634,26 @@ export default function CheckoutPage() {
                     {selectedDelivery ? (deliveryFee === 0 ? 'Free' : peso(deliveryFee)) : '—'}
                   </dd>
                 </div>
+                {processingFee > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-slate-600">
+                      Processing fee
+                      <span className="block text-[11px] text-slate-400">
+                        {feePercent}% — {paymentMethods.find((m) => m.id === paymentMethod)?.label}
+                      </span>
+                    </dt>
+                    <dd className="font-semibold text-slate-900">{peso(processingFee)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between items-baseline pt-3 mt-1 border-t border-slate-300">
                   <dt className="font-extrabold text-slate-900">Total</dt>
                   <dd className="text-2xl font-extrabold text-cyan-800">{peso(total)}</dd>
                 </div>
+                {feePercent > 0 && (
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Bank deposit and cash on delivery carry no processing fee.
+                  </p>
+                )}
               </dl>
 
               <Button

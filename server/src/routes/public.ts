@@ -35,7 +35,14 @@ import {
   isOnlineMethod,
   PaymentError,
 } from '../lib/payments.js';
-import { generateReference, money, newId, priceCart, PricingError } from '../lib/pricing.js';
+import {
+  generateReference,
+  money,
+  newId,
+  priceCart,
+  PricingError,
+  processingFee,
+} from '../lib/pricing.js';
 import { queueOrderPush } from '../lib/inventory-queue.js';
 import {
   bookingInputSchema,
@@ -210,8 +217,13 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
       return;
     }
 
+    // The gateway takes its cut of everything it collects, delivery included, so
+    // the fee is worked out on the full payable amount rather than on goods alone.
+    const payable = money(priced.goodsTotal + delivery.fee);
+    const fee = processingFee(input.paymentMethod, payable);
+
     // Cash on delivery is capped — our riders do not carry large amounts.
-    const total = money(priced.goodsTotal + delivery.fee);
+    const total = money(payable + fee);
     if (input.paymentMethod === 'cod' && total > 20_000) {
       res.status(400).json({
         error: 'Cash on delivery is only available for orders up to ₱20,000. Please choose another payment method.',
@@ -253,6 +265,7 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
       discountAmount: priced.discountAmount,
       deliveryFee: delivery.fee,
       vat: priced.vat,
+      processingFee: fee,
       total,
       createdAt: new Date().toISOString(),
       // Set properly by queueOrderPush below, once we know whether this order

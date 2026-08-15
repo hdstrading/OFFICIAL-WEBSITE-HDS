@@ -237,6 +237,12 @@ export default function OrderStatusPage() {
                 {order.deliveryFee === 0 ? 'Free' : peso(order.deliveryFee)}
               </dd>
             </div>
+            {order.processingFee > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-slate-600">Payment processing fee</dt>
+                <dd className="font-semibold text-slate-900">{peso(order.processingFee)}</dd>
+              </div>
+            )}
             <div className="flex justify-between pt-2 border-t border-slate-200">
               <dt className="font-extrabold text-slate-900">Total</dt>
               <dd className="font-extrabold text-slate-900 text-lg">{peso(order.total)}</dd>

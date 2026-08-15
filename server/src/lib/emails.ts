@@ -160,6 +160,9 @@ export function orderConfirmationEmail(order: Order, audience: 'customer' | 'sta
       : []),
     ['VAT (12%)', formatPeso(order.vat)],
     [`Delivery — ${order.delivery.label}`, order.deliveryFee === 0 ? 'Free' : formatPeso(order.deliveryFee)],
+    ...(order.processingFee > 0
+      ? ([['Payment processing fee', formatPeso(order.processingFee)]] as [string, string][])
+      : []),
     ['Total', formatPeso(order.total), true],
   ];
 

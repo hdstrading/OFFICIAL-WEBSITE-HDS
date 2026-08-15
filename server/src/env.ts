@@ -105,6 +105,27 @@ export const env = {
     webhookSecret: process.env.PAYMONGO_WEBHOOK_SECRET ?? '',
   },
 
+  /**
+   * Payment processing fee, as a percentage of the amount payable, per method.
+   *
+   * PayMongo charges us on every transaction and the rate depends on how the
+   * customer paid — cards and online banking cost the most, e-wallets less.
+   * Rather than average it into shelf prices, where every customer would pay for
+   * the most expensive method, it is charged to the method that incurs it.
+   *
+   * Bank deposit and cash on delivery are zero and should stay zero: they never
+   * touch the gateway, so there is no cost to pass on, and leaving them free
+   * gives customers a way to avoid the fee.
+   */
+  paymentFeePercent: {
+    card: Number(process.env.PAYMENT_FEE_CARD_PERCENT ?? 5),
+    online_banking: Number(process.env.PAYMENT_FEE_ONLINE_BANKING_PERCENT ?? 5),
+    gcash: Number(process.env.PAYMENT_FEE_GCASH_PERCENT ?? 3),
+    maya: Number(process.env.PAYMENT_FEE_MAYA_PERCENT ?? 3),
+    bank_transfer: Number(process.env.PAYMENT_FEE_BANK_TRANSFER_PERCENT ?? 0),
+    cod: Number(process.env.PAYMENT_FEE_COD_PERCENT ?? 0),
+  } as Record<string, number>,
+
   /** Percentage of a service booking taken up front as a down payment. */
   bookingDepositPercent: Math.min(
     100,
