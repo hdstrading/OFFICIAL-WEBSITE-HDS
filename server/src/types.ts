@@ -37,6 +37,18 @@ export interface Product {
   specs: Record<string, string>;
   isBulkEligible: boolean;
   minBulkQty: number;
+
+  /**
+   * Whether customers can see it. Set false by the catalog sync when the
+   * inventory system stops offering an item, rather than deleting the product —
+   * deleting would take its reviews and its order history with it.
+   */
+  isListed: boolean;
+  /** False for items the warehouse does not count; they are always sellable. */
+  stockTracked: boolean;
+  /** Units available for sale, from the last sync. Null when untracked. */
+  stockAvailable: number | null;
+  inventorySyncedAt?: string | null;
 }
 
 export interface Service {

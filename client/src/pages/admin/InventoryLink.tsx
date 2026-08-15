@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, PlugZap, RefreshCw, Send } from 'lucide-react';
-import { adminApi, ApiError } from '../../lib/api';
+import { CheckCircle2, Eye, PackageSearch, PlugZap, RefreshCw, Send } from 'lucide-react';
+import { adminApi, ApiError, type CatalogSyncResult } from '../../lib/api';
 import { formatDateTime, peso } from '../../lib/format';
 import type { Order } from '../../types';
 import { Alert, Badge, Button, Spinner } from '../../components/ui';
@@ -19,6 +19,7 @@ export default function InventoryLink({ onError }: { onError: (err: unknown) => 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [pingResult, setPingResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [sync, setSync] = useState<CatalogSyncResult | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -94,6 +95,19 @@ export default function InventoryLink({ onError }: { onError: (err: unknown) => 
     }
   }
 
+  async function runSync(preview: boolean) {
+    setBusy(preview ? 'preview' : 'sync');
+    setSync(null);
+    try {
+      const result = preview ? await adminApi.previewCatalogSync() : await adminApi.applyCatalogSync();
+      setSync(result);
+    } catch (error) {
+      onError(error);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (loading) return <Spinner label="Checking the inventory link…" />;
 
   return (
@@ -150,6 +164,99 @@ export default function InventoryLink({ onError }: { onError: (err: unknown) => 
         {pingResult && (
           <div className="mt-4">
             <Alert tone={pingResult.ok ? 'success' : 'error'}>{pingResult.message}</Alert>
+          </div>
+        )}
+      </div>
+
+      {/* Catalog sync */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+          <PackageSearch className="h-4.5 w-4.5 text-cyan-700" aria-hidden />
+          Catalog
+        </h2>
+        <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+          Pulls items ticked <strong>Sales Information</strong> in the inventory system, with their
+          prices and stock. Your feature bullets, specifications, photos and product names stay as
+          you wrote them — only the commercial fields are refreshed.
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-2.5">
+          <Button variant="secondary" onClick={() => runSync(true)} loading={busy === 'preview'}>
+            <Eye className="h-4 w-4" aria-hidden />
+            Preview changes
+          </Button>
+          <Button onClick={() => runSync(false)} loading={busy === 'sync'} disabled={!configured}>
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            Sync now
+          </Button>
+        </div>
+
+        <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">
+          Preview first if you are unsure. It works out every change and writes nothing — worth
+          doing before the first sync, to check a price against what you expect.
+        </p>
+
+        {sync && (
+          <div className="mt-4">
+            {sync.error ? (
+              <Alert tone="error">{sync.error}</Alert>
+            ) : (
+              <>
+                <Alert tone={sync.dryRun ? 'info' : 'success'}>
+                  {sync.dryRun ? 'Preview — nothing was saved. ' : 'Catalog updated. '}
+                  <strong>{sync.created}</strong> new, <strong>{sync.updated}</strong> updated,{' '}
+                  <strong>{sync.relisted}</strong> relisted, <strong>{sync.hidden}</strong> hidden,{' '}
+                  {sync.unchanged} unchanged.
+                </Alert>
+
+                {sync.changes.length > 0 && (
+                  <ul className="mt-3 max-h-72 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm">
+                    {sync.changes.map((change) => (
+                      <li key={`${change.action}-${change.sku}`} className="flex items-center justify-between gap-3 px-3.5 py-2">
+                        <span className="min-w-0">
+                          <span className="font-mono text-xs text-slate-500">{change.sku}</span>
+                          <span className="ml-2 text-slate-900">{change.name}</span>
+                        </span>
+                        <span className="shrink-0 flex items-center gap-2 text-xs">
+                          {change.priceFrom !== undefined && change.priceTo !== undefined && (
+                            <span className="text-slate-600">
+                              {peso(change.priceFrom)} → <strong>{peso(change.priceTo)}</strong>
+                            </span>
+                          )}
+                          {change.priceFrom === undefined && change.priceTo !== undefined && (
+                            <span className="text-slate-600">{peso(change.priceTo)}</span>
+                          )}
+                          {change.stockTo !== undefined && change.stockTo !== null && (
+                            <span className="text-slate-500">stock {change.stockTo}</span>
+                          )}
+                          <Badge
+                            tone={
+                              change.action === 'hide'
+                                ? 'red'
+                                : change.action === 'create'
+                                  ? 'emerald'
+                                  : 'cyan'
+                            }
+                          >
+                            {change.action}
+                          </Badge>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {sync.withoutSku.length > 0 && (
+                  <div className="mt-3">
+                    <Alert tone="warning" title={`${sync.withoutSku.length} product(s) have no SKU`}>
+                      These cannot be matched to the inventory system, so they are never synced and
+                      an order containing one cannot be sent to the warehouse:{' '}
+                      {sync.withoutSku.map((p) => p.name).join(', ')}. Add a SKU under Catalog.
+                    </Alert>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

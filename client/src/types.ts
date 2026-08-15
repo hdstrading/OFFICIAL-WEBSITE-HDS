@@ -59,7 +59,27 @@ export interface Product {
   specs: Record<string, string>;
   isBulkEligible: boolean;
   minBulkQty: number;
+  /** False once the inventory system stops offering it; hidden, never deleted. */
+  isListed: boolean;
+  /** False for items the warehouse does not count — always sellable. */
+  stockTracked: boolean;
+  /** Units left, from the last sync. Null when untracked. */
+  stockAvailable: number | null;
   rating?: RatingSummary;
+}
+
+/** How stock is described to customers — a level, never a raw count. */
+export type StockLevel = 'in_stock' | 'low_stock' | 'out_of_stock' | 'untracked';
+
+/**
+ * An exact number goes stale between syncs and invites argument; a level stays
+ * true for longer and is what a buyer actually needs to decide.
+ */
+export function stockLevel(product: Product): StockLevel {
+  if (!product.stockTracked || product.stockAvailable === null) return 'untracked';
+  if (product.stockAvailable <= 0) return 'out_of_stock';
+  if (product.stockAvailable <= 5) return 'low_stock';
+  return 'in_stock';
 }
 
 export interface Service {

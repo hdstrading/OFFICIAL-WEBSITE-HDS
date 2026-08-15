@@ -13,6 +13,29 @@ import type {
   Service,
 } from '../types';
 
+/** Result of a catalog sync, or of previewing one. */
+export interface CatalogSyncResult {
+  ok: boolean;
+  dryRun: boolean;
+  asOf: string;
+  created: number;
+  updated: number;
+  hidden: number;
+  relisted: number;
+  unchanged: number;
+  changes: {
+    sku: string;
+    name: string;
+    action: 'create' | 'update' | 'hide' | 'relist' | 'unchanged';
+    priceFrom?: number;
+    priceTo?: number;
+    stockFrom?: number | null;
+    stockTo?: number | null;
+  }[];
+  withoutSku: { id: string; name: string }[];
+  error?: string;
+}
+
 /**
  * Every call to the backend goes through here.
  *
@@ -303,6 +326,9 @@ export const adminApi = {
       '/admin/inventory/drain',
       {},
     ),
+
+  previewCatalogSync: () => request<CatalogSyncResult>('/admin/inventory/catalog/preview'),
+  applyCatalogSync: () => post<CatalogSyncResult>('/admin/inventory/catalog/sync', {}),
 
   integrations: () =>
     request<{

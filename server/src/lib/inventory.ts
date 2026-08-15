@@ -33,7 +33,7 @@ export class InventoryError extends Error {
  */
 const API_PREFIX = '/api';
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+export async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!inventoryConfigured) {
     throw new InventoryError('The inventory system link is not configured.', true);
   }

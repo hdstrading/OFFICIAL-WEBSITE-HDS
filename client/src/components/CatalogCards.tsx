@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { CalendarCheck, Package, Plus } from 'lucide-react';
 import type { Product, Service } from '../types';
-import { PRODUCT_CATEGORY_LABELS, SERVICE_CATEGORY_LABELS } from '../types';
+import { PRODUCT_CATEGORY_LABELS, SERVICE_CATEGORY_LABELS, stockLevel } from '../types';
 import { peso, pesoShort } from '../lib/format';
 import { useCart } from '../lib/cart';
 import { Badge, Button, StarRating } from './ui';
@@ -18,8 +18,20 @@ function ImageFallback() {
   );
 }
 
+/** Availability as a level, with wording a buyer can act on. */
+export function StockBadge({ product }: { product: Product }) {
+  const level = stockLevel(product);
+  if (level === 'untracked') return null;
+  if (level === 'out_of_stock') return <Badge tone="red">Out of stock</Badge>;
+  if (level === 'low_stock') {
+    return <Badge tone="amber">Only {product.stockAvailable} left</Badge>;
+  }
+  return <Badge tone="emerald">In stock</Badge>;
+}
+
 export function ProductCard({ product }: { product: Product }) {
   const { add } = useCart();
+  const soldOut = stockLevel(product) === 'out_of_stock';
 
   return (
     <article className="group flex flex-col rounded-2xl border border-slate-200 bg-white overflow-hidden hover:border-cyan-300 hover:shadow-lg transition-all">
@@ -37,11 +49,10 @@ export function ProductCard({ product }: { product: Product }) {
             e.currentTarget.style.visibility = 'hidden';
           }}
         />
-        {product.isBulkEligible && (
-          <span className="absolute top-2.5 left-2.5">
-            <Badge tone="cyan">Bulk pricing available</Badge>
-          </span>
-        )}
+        <span className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1.5">
+          <StockBadge product={product} />
+          {product.isBulkEligible && <Badge tone="cyan">Bulk pricing available</Badge>}
+        </span>
       </Link>
 
       <div className="flex flex-1 flex-col p-4">
@@ -73,11 +84,14 @@ export function ProductCard({ product }: { product: Product }) {
           </div>
           <Button
             size="sm"
+            disabled={soldOut}
             onClick={() => add(product, 1)}
-            aria-label={`Add ${product.name} to cart`}
+            aria-label={
+              soldOut ? `${product.name} is out of stock` : `Add ${product.name} to cart`
+            }
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
-            Add
+            {soldOut ? 'Sold out' : 'Add'}
           </Button>
         </div>
       </div>

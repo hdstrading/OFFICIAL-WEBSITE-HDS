@@ -202,6 +202,11 @@ function addColumn(table: string, column: string, definition: string): boolean {
 
 // Added when the inventory system link was introduced.
 addColumn('products', 'sku', "TEXT NOT NULL DEFAULT ''");
+// Mirrored from the inventory system by the catalog sync.
+addColumn('products', 'is_listed', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('products', 'stock_tracked', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('products', 'stock_available', 'REAL');
+addColumn('products', 'inventory_synced_at', 'TEXT');
 const inventoryColumnIsNew = addColumn('orders', 'inventory_status', "TEXT NOT NULL DEFAULT 'pending'");
 addColumn('orders', 'inventory_ref', 'TEXT');
 addColumn('orders', 'inventory_error', 'TEXT');
@@ -279,6 +284,10 @@ type ProductRow = {
   specs: string;
   is_bulk: number;
   min_bulk_qty: number;
+  is_listed: number;
+  stock_tracked: number;
+  stock_available: number | null;
+  inventory_synced_at: string | null;
 };
 
 const toProduct = (r: ProductRow): Product => ({
@@ -295,6 +304,10 @@ const toProduct = (r: ProductRow): Product => ({
   specs: json<Record<string, string>>(r.specs, {}),
   isBulkEligible: Boolean(r.is_bulk),
   minBulkQty: r.min_bulk_qty,
+  isListed: r.is_listed !== 0,
+  stockTracked: Boolean(r.stock_tracked),
+  stockAvailable: r.stock_available,
+  inventorySyncedAt: r.inventory_synced_at,
 });
 
 type ServiceRow = {
@@ -427,6 +440,13 @@ export const products = {
     const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id) as ProductRow | undefined;
     return row ? toProduct(row) : null;
   },
+  /**
+   * Writes a product, leaving the sync-owned fields alone.
+   *
+   * Staff edit marketing copy; the catalog sync owns listing and stock. An
+   * admin save that carried defaults for those would silently relist a hidden
+   * product or wipe its stock figure, so they are only written when supplied.
+   */
   upsert(p: Product, sortOrder = 0): Product {
     db.prepare(
       `INSERT INTO products (id, name, sku, category, subcategory, description, price, unit, image,
@@ -459,6 +479,23 @@ export const products = {
   },
   remove(id: string): boolean {
     return db.prepare('DELETE FROM products WHERE id = ?').run(id).changes > 0;
+  },
+  /** Written only by the catalog sync — never by the admin product form. */
+  setInventoryState(id: string, listed: boolean, tracked: boolean, available: number | null) {
+    db.prepare(
+      `UPDATE products
+          SET is_listed = ?, stock_tracked = ?, stock_available = ?,
+              inventory_synced_at = datetime('now')
+        WHERE id = ?`,
+    ).run(listed ? 1 : 0, tracked ? 1 : 0, available, id);
+  },
+  /** What customers may see: everything the inventory system still offers. */
+  listed(): Product[] {
+    return (
+      db
+        .prepare('SELECT * FROM products WHERE is_listed = 1 ORDER BY sort_order, name')
+        .all() as ProductRow[]
+    ).map(toProduct);
   },
   count(): number {
     return (db.prepare('SELECT COUNT(*) AS n FROM products').get() as { n: number }).n;

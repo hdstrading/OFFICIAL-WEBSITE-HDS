@@ -6,6 +6,7 @@ import {
   mapInventoryStatus,
   pushOrder,
 } from './inventory.js';
+import { syncCatalog } from './inventory-catalog.js';
 import type { Order } from '../types.js';
 
 /**
@@ -217,4 +218,26 @@ export function startInventoryWorker(): void {
   console.info(
     `Inventory push enabled → ${env.inventory.apiUrl} (retrying every ${env.inventory.retryIntervalMinutes} min)`,
   );
+
+  // The catalog is pulled on its own, slower schedule: prices and stock change
+  // far less often than an order needs delivering.
+  const syncMinutes = env.inventory.syncIntervalMinutes;
+  if (syncMinutes > 0) {
+    const runSync = async () => {
+      const result = await syncCatalog();
+      if (result.error) {
+        console.warn(`Catalog sync failed: ${result.error}`);
+      } else if (result.created || result.updated || result.hidden || result.relisted) {
+        console.info(
+          `Catalog sync: ${result.created} new, ${result.updated} updated, ` +
+            `${result.relisted} relisted, ${result.hidden} hidden.`,
+        );
+      }
+    };
+    setTimeout(() => {
+      void runSync();
+      setInterval(() => void runSync(), syncMinutes * 60 * 1000).unref();
+    }, 45_000).unref();
+    console.info(`Catalog sync enabled (every ${syncMinutes} min).`);
+  }
 }

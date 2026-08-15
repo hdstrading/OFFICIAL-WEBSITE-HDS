@@ -16,6 +16,7 @@ import { currentAdmin, endSession, requireAdmin, startSession, verifyCredentials
 import { bookLalamoveDelivery } from '../lib/delivery.js';
 import { ping as inventoryPing, InventoryError } from '../lib/inventory.js';
 import { drainQueue, retryPush } from '../lib/inventory-queue.js';
+import { syncCatalog } from '../lib/inventory-catalog.js';
 import { inventoryConfigured } from '../env.js';
 import { newId } from '../lib/pricing.js';
 import {
@@ -111,7 +112,15 @@ adminRouter.post('/products', (req, res) => {
     res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
     return;
   }
-  const product: Product = { ...parsed.data, id: parsed.data.id || `prod-${newId().slice(0, 8)}` };
+  // A product added by hand is listed and not stock-tracked; the catalog sync
+  // takes ownership of those the moment a matching SKU appears in inventory.
+  const product: Product = {
+    ...parsed.data,
+    id: parsed.data.id || `prod-${newId().slice(0, 8)}`,
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
+  };
   res.status(201).json({ product: products.upsert(product) });
 });
 
@@ -121,11 +130,22 @@ adminRouter.put('/products/:id', (req, res) => {
     res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
     return;
   }
-  if (!products.byId(req.params.id)) {
+  const existing = products.byId(req.params.id);
+  if (!existing) {
     res.status(404).json({ error: 'That product no longer exists.' });
     return;
   }
-  res.json({ product: products.upsert({ ...parsed.data, id: req.params.id }) });
+  // Carry the sync-owned fields through untouched — the edit form does not show
+  // them, so submitting it must not reset them.
+  res.json({
+    product: products.upsert({
+      ...parsed.data,
+      id: req.params.id,
+      isListed: existing.isListed,
+      stockTracked: existing.stockTracked,
+      stockAvailable: existing.stockAvailable,
+    }),
+  });
 });
 
 adminRouter.delete('/products/:id', (req, res) => {
@@ -317,6 +337,20 @@ adminRouter.post('/inventory/drain', async (_req, res) => {
   // Staff asked for this explicitly, so ignore any retry timer still running.
   await drainQueue({ ignoreBackoff: true });
   res.json({ counts: orders.inventoryCounts(), orders: orders.pushBacklog() });
+});
+
+/**
+ * Works out what a catalog sync would change, without writing anything.
+ *
+ * Exists because a wrong VAT setting is a 12% error across every price in the
+ * shop. Staff should see that before customers are charged it.
+ */
+adminRouter.get('/inventory/catalog/preview', async (_req, res) => {
+  res.json(await syncCatalog({ dryRun: true }));
+});
+
+adminRouter.post('/inventory/catalog/sync', async (_req, res) => {
+  res.json(await syncCatalog());
 });
 
 /* ------------------------------------------------------------------- quotes */

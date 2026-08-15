@@ -24,7 +24,12 @@ export const PRODUCTS: Product[] = [
       'Certification': 'FDA Approved, Green Label Certified'
     },
     isBulkEligible: true,
-    minBulkQty: 5
+    minBulkQty: 5,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'prod-aqua-chlorine',
@@ -49,7 +54,12 @@ export const PRODUCTS: Product[] = [
       'Ideal pH Range': '7.2 - 7.6'
     },
     isBulkEligible: true,
-    minBulkQty: 3
+    minBulkQty: 3,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'prod-bio-pure',
@@ -74,7 +84,12 @@ export const PRODUCTS: Product[] = [
       'Biodegradability': '100% within 14 days'
     },
     isBulkEligible: true,
-    minBulkQty: 10
+    minBulkQty: 10,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'equip-silentstream',
@@ -99,7 +114,12 @@ export const PRODUCTS: Product[] = [
       'Hose Length': '3.2 Meters reinforced non-kink'
     },
     isBulkEligible: false,
-    minBulkQty: 1
+    minBulkQty: 1,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'equip-optimus-scrub',
@@ -124,7 +144,12 @@ export const PRODUCTS: Product[] = [
       'Dead Weight': '48 kg (Self-propelled options)'
     },
     isBulkEligible: true,
-    minBulkQty: 2
+    minBulkQty: 2,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'equip-purewave',
@@ -149,7 +174,12 @@ export const PRODUCTS: Product[] = [
       'Reservoir Vol': '3.5 Liters dual-tank system'
     },
     isBulkEligible: false,
-    minBulkQty: 1
+    minBulkQty: 1,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'tool-microfiber',
@@ -174,7 +204,12 @@ export const PRODUCTS: Product[] = [
       'Color Coding options': 'Red (Critical, Restrooms), Blue (Lobbies), Green (Food Areas)'
     },
     isBulkEligible: true,
-    minBulkQty: 10
+    minBulkQty: 10,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'tool-pool-skimmer',
@@ -199,7 +234,12 @@ export const PRODUCTS: Product[] = [
       'Mesh Size': '150 Micron ultra-fine weave'
     },
     isBulkEligible: true,
-    minBulkQty: 5
+    minBulkQty: 5,
+    // Website-authored, so listed and not stock-tracked until the
+    // inventory system takes ownership of the item by SKU.
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   },
   {
     id: 'tool-bucket-wringer',
@@ -224,7 +264,10 @@ export const PRODUCTS: Product[] = [
       'Dimensions': '65 x 46 x 98 cm'
     },
     isBulkEligible: true,
-    minBulkQty: 4
+    minBulkQty: 4,
+    isListed: true,
+    stockTracked: false,
+    stockAvailable: null,
   }
 ];
 

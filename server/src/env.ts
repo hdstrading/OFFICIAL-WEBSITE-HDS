@@ -158,6 +158,22 @@ export const env = {
     warehouseId: process.env.INVENTORY_WAREHOUSE_ID ?? '',
     /** How often the retry worker looks for orders that have not reached the warehouse. */
     retryIntervalMinutes: Number(process.env.INVENTORY_RETRY_MINUTES ?? 5),
+
+    /** How often the catalog is pulled. 0 disables the schedule; manual sync still works. */
+    syncIntervalMinutes: Number(process.env.INVENTORY_SYNC_MINUTES ?? 15),
+
+    /**
+     * Whether `selling_price` in the inventory system already contains VAT.
+     *
+     * This matters by exactly 12%. The website stores prices VAT-exclusive and
+     * adds VAT at checkout, so an inclusive price imported as-is overcharges
+     * every customer, and an exclusive price treated as inclusive undercharges.
+     *
+     * Defaults to false because that matches how the website already works and
+     * the inventory system's own totals helper. Preview a sync before applying
+     * it and check one product's price against what you expect.
+     */
+    pricesIncludeVat: bool(process.env.INVENTORY_PRICES_INCLUDE_VAT, false),
     timeoutMs: Number(process.env.INVENTORY_TIMEOUT_MS ?? 15_000),
   },
 

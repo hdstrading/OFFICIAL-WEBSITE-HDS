@@ -97,18 +97,20 @@ publicRouter.get('/catalog', (_req, res) => {
     }));
 
   res.json({
-    products: withRatings(products.all(), 'product'),
+    // Only what the inventory system still offers. Hidden products keep their
+    // reviews and order history but are not sold.
+    products: withRatings(products.listed(), 'product'),
     services: withRatings(services.all(), 'service'),
   });
 });
 
 publicRouter.get('/products', (_req, res) => {
-  res.json({ products: products.all() });
+  res.json({ products: products.listed() });
 });
 
 publicRouter.get('/products/:id', (req, res) => {
   const product = products.byId(req.params.id);
-  if (!product) {
+  if (!product || !product.isListed) {
     res.status(404).json({ error: 'That product is no longer listed.' });
     return;
   }

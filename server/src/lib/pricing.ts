@@ -57,9 +57,23 @@ export function priceCart(
 
   for (const line of requested) {
     const product = products.byId(line.productId);
-    if (!product) {
+    if (!product || !product.isListed) {
       throw new PricingError(
         'One of the items in your list is no longer available. Please refresh and try again.',
+      );
+    }
+    // Checked here rather than only in the browser: the cart may have been sat
+    // open for an hour, and the warehouse may have sold the last one over the
+    // counter in the meantime.
+    if (
+      product.stockTracked &&
+      product.stockAvailable !== null &&
+      line.quantity > product.stockAvailable
+    ) {
+      throw new PricingError(
+        product.stockAvailable <= 0
+          ? `${product.name} has just gone out of stock. Please remove it to continue.`
+          : `Only ${product.stockAvailable} of ${product.name} are left. Please reduce the quantity.`,
       );
     }
     const lineTotal = money(product.price * line.quantity);

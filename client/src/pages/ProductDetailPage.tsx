@@ -5,8 +5,9 @@ import { api } from '../lib/api';
 import { useCart } from '../lib/cart';
 import { peso } from '../lib/format';
 import { Seo, breadcrumbSchema, productSchema } from '../lib/seo';
-import { PRODUCT_CATEGORY_LABELS, type Product, type Review } from '../types';
+import { PRODUCT_CATEGORY_LABELS, stockLevel, type Product, type Review } from '../types';
 import { Alert, Badge, Button, Section, Spinner, StarRating } from '../components/ui';
+import { StockBadge } from '../components/CatalogCards';
 import ReviewList from '../components/ReviewList';
 import ReviewForm from '../components/ReviewForm';
 
@@ -52,6 +53,13 @@ export default function ProductDetailPage() {
   }
 
   const specs = Object.entries(product.specs);
+  const soldOut = stockLevel(product) === 'out_of_stock';
+  // Cap the picker at what is actually available, so the customer is not
+  // invited to choose a quantity checkout will then reject.
+  const maxQuantity =
+    product.stockTracked && product.stockAvailable !== null
+      ? Math.max(1, product.stockAvailable)
+      : 10_000;
 
   return (
     <>
@@ -108,12 +116,13 @@ export default function ProductDetailPage() {
               {product.name}
             </h1>
 
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <StarRating
                 value={product.rating?.average ?? 0}
                 count={product.rating?.count ?? 0}
                 size="md"
               />
+              <StockBadge product={product} />
             </div>
 
             <p className="mt-5 text-slate-600 leading-relaxed">{product.description}</p>
@@ -158,12 +167,15 @@ export default function ProductDetailPage() {
                       type="number"
                       min={1}
                       value={quantity}
-                      onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+                      max={maxQuantity}
+                      onChange={(e) =>
+                        setQuantity(Math.min(maxQuantity, Math.max(1, Number(e.target.value) || 1)))
+                      }
                       className="w-16 text-center font-bold text-slate-900 border-x border-slate-300 py-2.5 focus:outline-2 focus:outline-cyan-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <button
                       type="button"
-                      onClick={() => setQuantity((q) => q + 1)}
+                      onClick={() => setQuantity((q) => Math.min(maxQuantity, q + 1))}
                       className="p-2.5 text-slate-600 hover:bg-slate-100 rounded-r-xl"
                       aria-label="Increase quantity"
                     >
@@ -176,8 +188,13 @@ export default function ProductDetailPage() {
                   <p className="text-xs font-semibold text-slate-700 mb-1.5">
                     Subtotal: <strong className="text-slate-900">{peso(product.price * quantity)}</strong>
                   </p>
-                  <Button size="lg" fullWidth onClick={() => add(product, quantity)}>
-                    Add to cart
+                  <Button
+                    size="lg"
+                    fullWidth
+                    disabled={soldOut}
+                    onClick={() => add(product, quantity)}
+                  >
+                    {soldOut ? 'Out of stock' : 'Add to cart'}
                   </Button>
                 </div>
               </div>
