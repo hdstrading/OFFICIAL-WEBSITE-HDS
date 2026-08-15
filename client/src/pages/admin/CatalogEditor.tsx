@@ -287,7 +287,10 @@ function ProductForm({
         <TextField
           label="SKU"
           value={sku}
-          onChange={(e) => setSku(e.target.value.toUpperCase())}
+          // Kept exactly as typed. Forcing upper case would silently rewrite a
+          // SKU that is lower case in the inventory system, and the two are
+          // matched as text.
+          onChange={(e) => setSku(e.target.value)}
           error={fieldErrors.sku}
           placeholder="HDS-LUXE-SAN"
           hint="Must match the inventory system exactly."

@@ -1,7 +1,7 @@
 import { env, inventoryConfigured } from '../env.js';
 import { money, VAT_RATE } from './pricing.js';
 import { formatAddress } from './delivery.js';
-import type { Order } from '../types.js';
+import type { Order, OrderStatus } from '../types.js';
 
 /**
  * Talks to the inventory system at inventory.hdstradingopc.com.
@@ -239,6 +239,62 @@ export async function pushOrder(order: Order): Promise<SalesOrderResult> {
   }
 
   return result;
+}
+
+/* ------------------------------------------------------- status mirroring */
+
+/** A sales order's progress, as the inventory system reports it. */
+export interface InventoryOrderStatus {
+  reference: string;
+  so_number: string;
+  /** draft | confirmed | packed | shipped | delivered | closed | void */
+  status: string;
+  /** Latest pick list for the order, if one exists: not_started | picking | picked | cancelled */
+  pick_status: string | null;
+}
+
+/**
+ * Statuses for a batch of orders. One request for everything still open rather
+ * than one per order, so the poll costs the warehouse a single query.
+ */
+export const fetchOrderStatuses = (references: string[]) =>
+  call<{ ok: boolean; as_of: string; orders: InventoryOrderStatus[] }>(
+    `/integration/orders?references=${encodeURIComponent(references.join(','))}`,
+  );
+
+/**
+ * Translates warehouse progress into what the customer is told.
+ *
+ * `confirmed` and `picked` both read as "Preparing your order": from the
+ * customer's side there is no difference between an order accepted and an order
+ * being walked around a warehouse, and inventing one would only invite "why has
+ * it said picked for two days".
+ *
+ * `closed` maps to delivered because it is the state a completed order settles
+ * into — treating it as unknown would make finished orders look stuck.
+ *
+ * Returns null for states with no customer-facing meaning, leaving the website
+ * status untouched rather than inventing one.
+ */
+export function mapInventoryStatus(status: string): OrderStatus | null {
+  switch (status) {
+    // Covers picking too: a pick list exists only while the order is still
+    // `confirmed`, and the customer sees the same thing throughout.
+    case 'confirmed':
+      return 'processing';
+    case 'packed':
+      return 'ready_for_dispatch';
+    case 'shipped':
+      return 'in_transit';
+    case 'delivered':
+    case 'closed':
+      return 'delivered';
+    case 'void':
+      return 'cancelled';
+    // `draft` never reaches us — the integration creates orders confirmed.
+    default:
+      return null;
+  }
 }
 
 /** Releases the stock an order had committed. Refused once anything shipped. */

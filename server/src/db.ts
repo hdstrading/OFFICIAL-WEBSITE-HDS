@@ -1099,6 +1099,27 @@ export const orders = {
         .run(id).changes > 0
     );
   },
+  /**
+   * Orders in the warehouse's hands but not yet finished, for status polling.
+   *
+   * Only those actually sent — an order the inventory system never received has
+   * no status to report — and only those still moving. Delivered and cancelled
+   * orders are terminal, so polling them forever would grow the request with
+   * every order ever placed.
+   */
+  awaitingFulfilment(): Order[] {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM orders
+            WHERE inventory_status = 'sent'
+              AND order_status NOT IN ('delivered','cancelled')
+            ORDER BY created_at DESC
+            LIMIT 100`,
+        )
+        .all() as OrderRow[]
+    ).map(toOrder);
+  },
   inventoryCounts(): { pending: number; failed: number; sent: number } {
     const rows = db
       .prepare('SELECT inventory_status AS status, COUNT(*) AS n FROM orders GROUP BY inventory_status')

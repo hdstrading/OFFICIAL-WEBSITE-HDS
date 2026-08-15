@@ -290,3 +290,110 @@ Restart, then use **Sync now** in the staff portal under Catalog.
 
 The rule throughout: **the inventory system being unavailable must never stop
 the website taking money.** Orders survive, and reconcile when the link returns.
+
+---
+
+## Proposed: two further changes to the inventory system
+
+Both are for review, like the catalog endpoint was. Neither has been applied.
+
+### 1. Match SKUs case-insensitively
+
+`POST /integration/orders` looks items up with `WHERE sku = ?`, which in SQLite
+is case-sensitive on text. A product entered on the website as `hds-luxe-san`
+therefore fails against an item stored as `HDS-LUXE-SAN`, with an "unknown SKU"
+that looks like a missing item rather than a capitalisation difference.
+
+One line, in `server/routes/integration.js`:
+
+```diff
+-    const item = sku ? db.prepare('SELECT id, name, selling_price, tax_rate FROM items WHERE sku = ?').get(sku) : null;
++    // Case-insensitive: a SKU is an identifier, and staff type it into two
++    // different systems. Treating `HDS-001` and `hds-001` as different items
++    // rejects the order with a message that reads like the item is missing.
++    const item = sku
++      ? db.prepare('SELECT id, name, selling_price, tax_rate FROM items WHERE sku = ? COLLATE NOCASE').get(sku)
++      : null;
+```
+
+The website now stores SKUs exactly as typed rather than forcing upper case, so
+this is what makes the two agree.
+
+### 2. Report order status back
+
+The warehouse knows when an order was packed and when it shipped; the customer
+asking "where is my order?" is on the website. There is currently no way for one
+to tell the other.
+
+A read-only endpoint, taking the references the website already knows:
+
+```js
+/**
+ * Progress of website orders, for the storefront to show its customers.
+ *
+ * Batched deliberately: the storefront polls every open order at once, so this
+ * costs one query however many are in flight, rather than one request each.
+ *
+ * `pick_status` comes from the order's latest pick list, which is where picking
+ * lives — the sales order itself goes confirmed → packed without passing
+ * through a picked state.
+ */
+router.get('/integration/orders', (req, res) => {
+  const references = String(req.query.references || '')
+    .split(',')
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .slice(0, 200); // A storefront with more than 200 orders in flight can page.
+
+  if (!references.length) {
+    return res.status(400).json({ error: 'references is required' });
+  }
+
+  const placeholders = references.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT so.id, so.so_number, so.reference, so.status,
+              (SELECT pl.status FROM pick_lists pl
+                WHERE pl.so_id = so.id ORDER BY pl.id DESC LIMIT 1) AS pick_status
+         FROM sales_orders so
+        WHERE so.reference IN (${placeholders}) AND so.reference <> ''`
+    )
+    .all(...references);
+
+  res.json({
+    ok: true,
+    as_of: new Date().toISOString(),
+    orders: rows.map((row) => ({
+      reference: row.reference,
+      so_number: row.so_number,
+      status: row.status,
+      pick_status: row.pick_status || null,
+    })),
+  });
+});
+```
+
+Reads only, writes nothing, and returns no financial detail — just where each
+order has got to.
+
+### How the website uses it
+
+Polled every `INVENTORY_RETRY_MINUTES` for orders that were sent and are not yet
+finished:
+
+| Inventory system | Customer sees |
+| --- | --- |
+| `confirmed` (incl. while picking) | Preparing your order |
+| `packed` | Ready for dispatch |
+| `shipped` | On the way |
+| `delivered` / `closed` | Delivered |
+| `void` | Cancelled |
+
+Picking is deliberately not shown separately. A pick list exists only while the
+sales order is still `confirmed`, and from the customer's side there is no
+difference between an order accepted and an order being walked around a
+warehouse — surfacing one would only invite "why has it said picked for two
+days". The status changes when something visible happens: it is packed.
+
+Delivered and cancelled orders stop being polled, so the request does not grow
+with every order ever placed.

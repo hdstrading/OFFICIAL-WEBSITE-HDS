@@ -1,6 +1,11 @@
 import { env, inventoryConfigured } from '../env.js';
 import { orders } from '../db.js';
-import { InventoryError, pushOrder } from './inventory.js';
+import {
+  fetchOrderStatuses,
+  InventoryError,
+  mapInventoryStatus,
+  pushOrder,
+} from './inventory.js';
 import type { Order } from '../types.js';
 
 /**
@@ -134,6 +139,54 @@ export async function drainQueue({ ignoreBackoff = false } = {}): Promise<void> 
 }
 
 /**
+ * Brings warehouse progress back to the customer.
+ *
+ * The inventory system owns fulfilment, so it is the only thing that knows when
+ * an order was packed or handed to a driver. Rather than have it call us — which
+ * would mean changes to its lifecycle code and a second place for this to break
+ * — the website asks, in one request covering every order still in flight.
+ *
+ * Only orders we actually sent are polled, and only those not yet finished:
+ * a delivered or cancelled order has nowhere left to go.
+ */
+export async function syncOrderStatuses(): Promise<void> {
+  if (!inventoryConfigured) return;
+
+  const open = orders.awaitingFulfilment();
+  if (open.length === 0) return;
+
+  try {
+    const { orders: statuses } = await fetchOrderStatuses(open.map((o) => o.reference));
+
+    for (const remote of statuses) {
+      const local = open.find((o) => o.reference === remote.reference);
+      if (!local) continue;
+
+      const mapped = mapInventoryStatus(remote.status);
+      if (!mapped || mapped === local.orderStatus) continue;
+
+      orders.setOrderStatus(local.id, mapped);
+      console.info(
+        `Order ${local.reference}: ${local.orderStatus} → ${mapped} ` +
+          `(warehouse says ${remote.status})`,
+      );
+    }
+  } catch (error) {
+    const message = (error as Error).message;
+    // A 404 means this version of the inventory system has no status endpoint
+    // yet. Say so once per poll and carry on — everything else still works.
+    if (error instanceof InventoryError && /404|not found|No API route/i.test(message)) {
+      console.info(
+        'Order status mirroring is unavailable — the inventory system has no ' +
+          '/integration/orders endpoint. Orders still reach it; only progress updates are missing.',
+      );
+      return;
+    }
+    console.warn(`Could not read order statuses from the inventory system: ${message}`);
+  }
+}
+
+/**
  * Starts the retry timer.
  *
  * The first run is delayed rather than immediate so a server restart during an
@@ -154,7 +207,11 @@ export function startInventoryWorker(): void {
 
   setTimeout(() => {
     void drainQueue();
-    setInterval(() => void drainQueue(), intervalMs).unref();
+    void syncOrderStatuses();
+    setInterval(() => {
+      void drainQueue();
+      void syncOrderStatuses();
+    }, intervalMs).unref();
   }, 30_000).unref();
 
   console.info(
