@@ -288,9 +288,7 @@ certbot renew --dry-run
 
 Open **https://hdstradingopc.com** — the site should load over HTTPS.
 
----
-
-## 6e. Close the server down
+### 6e. Close the server down
 
 The application listens on loopback only, so port 4000 is not reachable from
 outside — nginx proxies to it from the same machine. Confirm that:
@@ -414,12 +412,65 @@ Confirm with one small real purchase on your own card before announcing it.
 
 ## 8. Turn on email
 
-Confirmations are sent over SMTP. For a Gmail or Google Workspace account,
-create an [App Password](https://myaccount.google.com/apppasswords) — your
-normal password will not work — and set `SMTP_USER` and `SMTP_PASS`.
+Until this is done, **customers get no confirmation and your team gets no
+notification of new orders**. Orders are still recorded and visible in the staff
+portal, and the emails are written to the log rather than lost — but nobody is
+told anything automatically.
 
-Restart afterwards. Until this is configured the site still takes orders
-normally; the emails are written to the log instead of being sent.
+Two options. The IONOS mailbox is the better one: it sends from your own domain,
+which looks right to customers and is less likely to be filtered as spam.
+
+### Option A — IONOS mailbox (recommended)
+
+Create a mailbox such as `orders@hdstradingopc.com` in the IONOS panel under
+**Email**, then:
+
+```bash
+SMTP_HOST=smtp.ionos.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=orders@hdstradingopc.com
+SMTP_PASS=the-mailbox-password
+SMTP_FROM=HDS Trading OPC <orders@hdstradingopc.com>
+NOTIFY_EMAIL=hanepditoshop@gmail.com
+```
+
+### Option B — Gmail
+
+Gmail needs an [App Password](https://myaccount.google.com/apppasswords), not
+your account password:
+
+```bash
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=hanepditoshop@gmail.com
+SMTP_PASS=the-16-character-app-password
+SMTP_FROM=HDS Trading OPC <hanepditoshop@gmail.com>
+NOTIFY_EMAIL=hanepditoshop@gmail.com
+```
+
+**Set `SMTP_FROM` to the same address you authenticate with.** Gmail rewrites
+the From header to the signed-in account unless the address is verified under
+**Settings → Accounts → Send mail as**, so a mismatch means your carefully
+branded sender is replaced anyway. Gmail also caps sending at around 500
+messages a day.
+
+### Test it
+
+```bash
+node scripts/test-email.mjs
+```
+
+That checks the credentials, sends one message, and explains the error if
+something is wrong. Once it arrives:
+
+```bash
+systemctl restart hdstradingopc
+```
+
+Then place a test order and confirm both emails arrive — the customer receipt
+and the `[Order]` notification to your team. Check spam on the first one.
 
 ---
 
@@ -433,6 +484,57 @@ Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
 Nothing on the public website links to this page, it is excluded from search
 engines, and it is not listed in `robots.txt` (which would advertise it). Treat
 the URL itself as a secret.
+
+---
+
+## 10. Before you tell anyone the address
+
+The site works at this point, but it is still showing the starter catalog.
+These are the things worth doing before real customers arrive.
+
+### Replace the demo catalog
+
+The nine products and three services the database was seeded with are examples,
+with stock photography and invented specifications. **Prices are real money
+now** — a customer can buy any of them at the listed price.
+
+In the staff portal under **Catalog**, either edit each entry to match what you
+actually stock, or delete them and add your own. What matters most:
+
+- **Price** — excluding VAT; the site adds 12% at checkout
+- **Unit** — "20L Carboy", "Per sqm", whatever you actually sell by
+- **Image** — a direct link to a real photo of the product
+- **Starting price on services** — the down payment is calculated from it
+
+### Set up backups
+
+You have real orders in the database now. Losing the VPS means losing every
+order, booking, quotation and review. See
+[Backing up](#backing-up) below and add the cron job — it takes two minutes.
+
+### Check the booking calendar matches reality
+
+Under **Block dates** in the staff portal, close off holidays and any dates your
+crews are already committed. `BOOKING_SLOT_CAPACITY` in `.env` sets how many
+crews can be booked per time slot — the default is 2.
+
+### Switch PayMongo to live keys
+
+If you tested with `sk_test_` keys, no real money has moved yet. See
+[step 7e](#7e-go-live).
+
+### Submit the site to Google
+
+Once the catalog is real, add the site at
+[Google Search Console](https://search.google.com/search-console), verify
+ownership, and submit `https://hdstradingopc.com/sitemap.xml`. The sitemap is
+generated from your live catalog, so it stays current on its own.
+
+### Optional: courier accounts
+
+Lalamove and Transportify already appear at checkout with indicative rates that
+your team confirms before dispatch. Adding API credentials replaces those with
+live quotes and lets staff book a rider from the order page. See `.env.example`.
 
 ---
 
