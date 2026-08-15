@@ -547,6 +547,22 @@ cd /var/www/hdstradingopc
 git pull
 npm ci
 npm run build
+node scripts/check-env.mjs      # did the update add any settings?
+systemctl restart hdstradingopc
+```
+
+**`.env` is not updated by `git pull`,** and it must not be — it holds your
+passwords and keys, so it is deliberately untracked. An update that introduces a
+setting therefore adds it to `.env.example` and not to the file the server
+actually reads, and whatever it controls stays switched off with nothing to
+indicate why.
+
+`check-env.mjs` lists anything present in the example but missing from yours.
+To add them, with the example's defaults filled in:
+
+```bash
+node scripts/check-env.mjs --append
+nano .env                       # fill in any blanks, which are the secrets
 systemctl restart hdstradingopc
 ```
 
