@@ -31,11 +31,22 @@ At [console.cloud.google.com](https://console.cloud.google.com):
 1. Create a project.
 2. Enable the **Geocoding API** specifically — not "Maps JavaScript API", which
    is a different product and will not answer these requests.
-3. Create an API key, then **restrict it to the Geocoding API**. An unrestricted
-   key that leaks can be used against your billing account for anything Google
-   sells.
-4. Enable billing. The standing $200/month free credit covers roughly 40,000
-   lookups; a shop doing a hundred orders a month will not approach it.
+3. Create an API key, then restrict it twice:
+   - **API restriction** → Geocoding API only. An unrestricted key that leaks
+     can be spent against your billing account on anything Google sells.
+   - **Application restriction** → IP addresses → the website VPS's address.
+     This call is made server-side, never from a browser, so the key only ever
+     has to work from one machine. A key that only functions from your own
+     server is close to worthless to anybody who copies it.
+4. Enable billing. A card is required even though you are unlikely to be
+   charged: Google gives Geocoding a monthly free allowance, and results here
+   are cached so each distinct address is looked up at most once. Check the
+   current allowance on Google's Maps Platform pricing page rather than trusting
+   a number written down here — it has changed before (it used to be a flat $200
+   monthly credit; it is now a per-product monthly free tier).
+5. **Set a budget alert** while you are in there: Billing → Budgets & alerts →
+   create one at a small amount, say $10. That is the real protection, and it
+   does not depend on anyone remembering what the free tier is this year.
 
 Then on the website VPS, in `.env`:
 
