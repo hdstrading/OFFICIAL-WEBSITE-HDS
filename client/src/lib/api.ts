@@ -172,6 +172,19 @@ export const api = {
       { code, items },
     ),
 
+  /** Turns a dropped pin back into a written address. Null when nothing was found. */
+  reverseGeocode: (lat: number, lng: number) =>
+    post<{
+      address: {
+        line1: string;
+        barangay: string;
+        city: string;
+        province: string;
+        postalCode: string;
+        formatted: string;
+      } | null;
+    }>('/geocode/reverse', { lat, lng }),
+
   deliveryQuote: (items: { productId: string; quantity: number }[], address: DeliveryAddress) =>
     post<{ options: DeliveryOption[]; subtotal: number }>('/delivery/quote', { items, address }),
 

@@ -21,6 +21,7 @@ import {
   TIME_SLOTS,
 } from '../lib/availability.js';
 import { quoteDeliveryOptions, resolveDeliveryOption } from '../lib/delivery.js';
+import { reverseGeocode } from '../lib/geocode.js';
 import {
   bookingConfirmationEmail,
   orderConfirmationEmail,
@@ -181,6 +182,31 @@ publicRouter.post('/discount/validate', quoteLimiter, (req, res) => {
     }
     if (sendValidationError(res, error)) return;
     throw error;
+  }
+});
+
+/**
+ * Turns a pin the customer dropped back into a written address.
+ *
+ * Rate limited like the other paid lookups: this spends real money per call and
+ * is reachable without signing in.
+ */
+publicRouter.post('/geocode/reverse', quoteLimiter, async (req, res, next) => {
+  try {
+    const input = z
+      .object({
+        lat: z.coerce.number().min(-90).max(90),
+        lng: z.coerce.number().min(-180).max(180),
+      })
+      .parse(req.body);
+
+    const found = await reverseGeocode(input.lat, input.lng);
+    // Not an error: geocoding may be unconfigured, or the pin may be in the sea.
+    // The customer simply keeps typing.
+    res.json({ address: found });
+  } catch (error) {
+    if (sendValidationError(res, error)) return;
+    next(error);
   }
 });
 

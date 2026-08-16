@@ -89,6 +89,94 @@ export async function geocodeAddress(address: DeliveryAddress): Promise<GeocodeR
   return result;
 }
 
+/* --------------------------------------------------------------- reverse */
+
+/** An address broken into the fields the checkout form actually has. */
+export interface ReverseGeocodeResult {
+  line1: string;
+  barangay: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  /** Google's own one-line rendering, for showing the customer what was found. */
+  formatted: string;
+}
+
+/**
+ * Google returns an address as a list of typed components rather than fields.
+ *
+ * The mapping onto ours is a Philippine judgement, not a universal one. A
+ * barangay is normally `sublocality_level_1`, occasionally only `neighborhood`.
+ * A Metro Manila city arrives as `locality` with `administrative_area_level_1`
+ * holding "Metro Manila"; in the provinces the town is the `locality` and the
+ * province the same admin level, which is why both are read the same way.
+ */
+function partsFrom(components: { long_name?: string; types?: string[] }[]): Omit<ReverseGeocodeResult, 'formatted'> {
+  const find = (...types: string[]) =>
+    components.find((c) => types.some((t) => c.types?.includes(t)))?.long_name ?? '';
+
+  const streetNumber = find('street_number');
+  const route = find('route');
+
+  return {
+    line1: [streetNumber, route].filter(Boolean).join(' '),
+    barangay: find('sublocality_level_1', 'sublocality', 'neighborhood'),
+    city: find('locality', 'administrative_area_level_2'),
+    province: find('administrative_area_level_1'),
+    postalCode: find('postal_code'),
+  };
+}
+
+/**
+ * Turns a pin back into a written address.
+ *
+ * Deliberately not cached: unlike a typed address, which repeats across
+ * customers, a dropped pin is close to unique, so a cache would grow without
+ * ever being hit. The call is bounded by the rate limiter on the route instead.
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResult | null> {
+  if (!geocodingConfigured) return null;
+
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('latlng', `${lat},${lng}`);
+  url.searchParams.set('key', env.googleMapsApiKey);
+  url.searchParams.set('region', 'ph');
+  url.searchParams.set('language', 'en');
+
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(env.geocodeTimeoutMs) });
+    if (!response.ok) return null;
+
+    const body = (await response.json()) as {
+      status?: string;
+      error_message?: string;
+      results?: {
+        address_components?: { long_name?: string; types?: string[] }[];
+        formatted_address?: string;
+      }[];
+    };
+
+    if (body.status === 'REQUEST_DENIED' || body.status === 'OVER_QUERY_LIMIT') {
+      console.error(
+        `Reverse geocoding rejected (${body.status}): ${body.error_message ?? 'no detail given'}.`,
+      );
+      return null;
+    }
+
+    // Results run most specific first, so the first one is the street address.
+    const best = body.results?.[0];
+    if (!best?.address_components) return null;
+
+    // A missing house number is normal — plenty of Philippine streets have none
+    // in Google's data — so the rest of the address is still worth returning,
+    // and the customer keeps whatever they typed for that field.
+    return { ...partsFrom(best.address_components), formatted: best.formatted_address ?? '' };
+  } catch (error) {
+    console.warn(`Reverse geocoding unavailable: ${(error as Error).message}`);
+    return null;
+  }
+}
+
 async function lookup(query: string): Promise<GeocodeResult> {
   const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
   url.searchParams.set('address', query);

@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Crosshair, MapPin, X } from 'lucide-react';
+import { api } from '../lib/api';
 import { Button } from './ui';
+
+/** The address fields a pin can fill in. */
+export interface FoundAddress {
+  line1: string;
+  barangay: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  formatted: string;
+}
 
 /**
  * Lets the customer place the exact spot their order should go to.
@@ -21,6 +32,11 @@ interface Props {
   addressHint: string;
   value: { lat: number; lng: number } | null;
   onChange: (value: { lat: number; lng: number } | null) => void;
+  /**
+   * The address the pin turned out to be. Called after every pin move, so the
+   * form can fill in whatever the customer has not typed themselves.
+   */
+  onAddressFound: (found: FoundAddress) => void;
   /** From /site-info. Blank hides the map; the locate button still works. */
   mapsKey: string;
 }
@@ -57,13 +73,45 @@ function loadMaps(key: string): Promise<void> {
   return window.__hdsMapsPromise;
 }
 
-export default function LocationPicker({ addressHint, value, onChange, mapsKey }: Props) {
+export default function LocationPicker({
+  addressHint,
+  value,
+  onChange,
+  onAddressFound,
+  mapsKey,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const [reading, setReading] = useState(false);
   const mapEl = useRef<HTMLDivElement | null>(null);
   const markerRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
+
+  /**
+   * Records a pin and asks the server what address it is.
+   *
+   * The lookup runs on our server rather than in the browser so it works with
+   * only the geocoding key configured — the map key is optional, but "use my
+   * location" is not, and a customer on a phone deserves the same help.
+   */
+  const setPin = useCallback(
+    (next: { lat: number; lng: number }) => {
+      onChange(next);
+      setReading(true);
+      api
+        .reverseGeocode(next.lat, next.lng)
+        .then(({ address }) => {
+          if (address) onAddressFound(address);
+        })
+        .catch(() => {
+          // Silent: the pin is still recorded and the price still improves.
+          // The customer types the address as they were going to anyway.
+        })
+        .finally(() => setReading(false));
+    },
+    [onChange, onAddressFound],
+  );
 
   /** The browser's own location, which needs no API key and no map. */
   const useMyLocation = useCallback(() => {
@@ -76,7 +124,7 @@ export default function LocationPicker({ addressHint, value, onChange, mapsKey }
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const next = { lat: position.coords.latitude, lng: position.coords.longitude };
-        onChange(next);
+        setPin(next);
         setLocating(false);
         if (mapRef.current && markerRef.current) {
           mapRef.current.setCenter(next);
@@ -90,7 +138,7 @@ export default function LocationPicker({ addressHint, value, onChange, mapsKey }
       },
       { enableHighAccuracy: true, timeout: 10_000 },
     );
-  }, [onChange]);
+  }, [setPin]);
 
   // Builds the map once the panel is open and the script has loaded.
   useEffect(() => {
@@ -114,13 +162,13 @@ export default function LocationPicker({ addressHint, value, onChange, mapsKey }
 
         marker.addListener('dragend', () => {
           const position = marker.getPosition();
-          if (position) onChange({ lat: position.lat(), lng: position.lng() });
+          if (position) setPin({ lat: position.lat(), lng: position.lng() });
         });
         // Tapping is easier than dragging on a phone.
         map.addListener('click', (event: any) => {
           if (!event.latLng) return;
           marker.setPosition(event.latLng);
-          onChange({ lat: event.latLng.lat(), lng: event.latLng.lng() });
+          setPin({ lat: event.latLng.lat(), lng: event.latLng.lng() });
         });
 
         mapRef.current = map;
@@ -148,7 +196,7 @@ export default function LocationPicker({ addressHint, value, onChange, mapsKey }
     return () => {
       cancelled = true;
     };
-  }, [open, mapsKey, addressHint, onChange, value]);
+  }, [open, mapsKey, addressHint, setPin, value]);
 
   return (
     <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -160,8 +208,10 @@ export default function LocationPicker({ addressHint, value, onChange, mapsKey }
             <span className="font-semibold text-slate-400">(optional)</span>
           </p>
           <p className="mt-0.5 text-xs text-slate-600 leading-relaxed">
-            {value
-              ? 'Saved. Your courier price is now based on this exact spot.'
+            {reading
+              ? 'Reading the address at that spot…'
+              : value
+              ? 'Saved. Your courier price is now based on this exact spot, and we have filled in what we could below.'
               : 'Street names in subdivisions are often hard to find. A pin gives your rider somewhere precise to go, and prices the delivery accurately.'}
           </p>
         </div>

@@ -118,6 +118,24 @@ Leave it blank and the map simply does not appear — and the site's
 Content-Security-Policy stays tighter, since Google's origins are only allowed
 when the key is set.
 
+**The pin also fills in the address.** Whichever way it is placed, the spot is
+sent back through Google in reverse and the street, barangay, city, province and
+postal code come back written out.
+
+How that is applied matters more than it sounds:
+
+- **Empty fields are filled silently.** That is the convenience, and there is
+  nothing to lose.
+- **Anything the customer has typed is left alone**, and the pin's version is
+  offered beside it with *Use the pin's address* / *Keep what I typed*. They are
+  more likely to be right about their own address than a map is — a unit number,
+  a building name, a street rendered differently — and overwriting that
+  mid-checkout is how somebody ends up with a delivery to the map's idea of
+  where they live.
+
+The lookup runs on the server with the geocoding key, not in the browser, so it
+works for **Use my location** even when no map key is configured.
+
 Neither is ever required of the customer. Skipping both costs them nothing.
 
 ---

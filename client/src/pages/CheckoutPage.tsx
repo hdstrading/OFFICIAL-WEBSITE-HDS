@@ -27,7 +27,7 @@ import {
   TextAreaField,
   TextField,
 } from '../components/ui';
-import LocationPicker from '../components/LocationPicker';
+import LocationPicker, { type FoundAddress } from '../components/LocationPicker';
 
 const PAYMENT_ICONS: Record<PaymentMethod, typeof CreditCard> = {
   card: CreditCard,
@@ -68,6 +68,8 @@ export default function CheckoutPage() {
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
 
   const [mapsKey, setMapsKey] = useState('');
+  /** An address the pin resolved to that disagrees with what the customer typed. */
+  const [suggested, setSuggested] = useState<FoundAddress | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
 
@@ -99,6 +101,51 @@ export default function CheckoutPage() {
       .then((info) => setMapsKey(info.mapsBrowserKey ?? ''))
       .catch(() => setMapsKey(''));
   }, []);
+
+  /** The address fields a pin can fill, and what the customer currently has. */
+  const PIN_FILLED_FIELDS = ['line1', 'barangay', 'city', 'province', 'postalCode'] as const;
+
+  /**
+   * Takes what the pin resolved to, without overwriting anything typed.
+   *
+   * Blank fields are filled silently — that is the whole convenience, and there
+   * is nothing to lose. A field the customer has already written in is left
+   * alone and offered instead, because they are more likely to be right about
+   * their own address than Google is: a unit number, a building name, a street
+   * Google renders differently. Overwriting that mid-checkout is how a customer
+   * ends up receiving somebody else's version of where they live.
+   */
+  function applyFoundAddress(found: FoundAddress) {
+    const filled: Partial<DeliveryAddress> = {};
+    let conflicts = false;
+
+    for (const field of PIN_FILLED_FIELDS) {
+      const current = (address[field] ?? '').trim();
+      const discovered = (found[field] ?? '').trim();
+      if (!discovered) continue;
+      if (!current) filled[field] = discovered;
+      else if (current.toLowerCase() !== discovered.toLowerCase()) conflicts = true;
+    }
+
+    if (Object.keys(filled).length > 0) setAddress((prev) => ({ ...prev, ...filled }));
+    setSuggested(conflicts ? found : null);
+  }
+
+  /** Replaces every field with the pin's version, on the customer's say-so. */
+  function acceptSuggestion() {
+    if (!suggested) return;
+    setAddress((prev) => ({
+      ...prev,
+      line1: suggested.line1 || prev.line1,
+      barangay: suggested.barangay || prev.barangay,
+      city: suggested.city || prev.city,
+      province: suggested.province || prev.province,
+      postalCode: suggested.postalCode || prev.postalCode,
+    }));
+    setSuggested(null);
+    setDeliveryOptions([]);
+    setSelectedDelivery(null);
+  }
 
   /** Delivery prices depend on the address, so quote once it is complete enough. */
   async function fetchDeliveryOptions() {
@@ -410,8 +457,34 @@ export default function CheckoutPage() {
                     setDeliveryOptions([]);
                     setSelectedDelivery(null);
                   }}
+                  onAddressFound={applyFoundAddress}
                   mapsKey={mapsKey}
                 />
+
+                {suggested && (
+                  <div className="mt-3">
+                    <Alert tone="info" title="That pin is at a different address">
+                      <p className="leading-relaxed">
+                        We read your pin as <strong>{suggested.formatted}</strong>. Your own wording
+                        is kept unless you say otherwise — a unit or building name is often more
+                        useful to the driver than what a map returns.
+                      </p>
+                      <p className="mt-2.5 flex flex-wrap gap-2">
+                        <Button type="button" size="sm" onClick={acceptSuggestion}>
+                          Use the pin's address
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSuggested(null)}
+                        >
+                          Keep what I typed
+                        </Button>
+                      </p>
+                    </Alert>
+                  </div>
+                )}
 
                 <Button type="button" variant="secondary" onClick={fetchDeliveryOptions} loading={quotingDelivery}>
                   <Truck className="h-4 w-4" aria-hidden />
