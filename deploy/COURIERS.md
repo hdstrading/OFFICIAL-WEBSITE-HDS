@@ -134,6 +134,29 @@ LALAMOVE_MARKET=PH
 LALAMOVE_BASE_URL=https://rest.sandbox.lalamove.com
 ```
 
+### Vehicle codes are per market
+
+This one is easy to lose an afternoon to. `TRUCK330` is a genuine Lalamove
+vehicle — just not one they run in the Philippines — and quoting it returns:
+
+```
+422 {"errors":[{"id":"ERR_INVALID_FIELD","message":"value must be one of
+\"MOTORCYCLE\", \"MPV\", \"SEDAN\", \"VAN\", \"2000KG_FB\", ...
+"detail":"/data/serviceType"}]}
+```
+
+Worth reading that error as good news when you meet it: a 422 on a field value
+means the HMAC signature was **accepted**, so the key, the secret and the
+request signing are all correct.
+
+`LALAMOVE_SERVICE_TYPES` controls what is offered, defaulting to
+`MOTORCYCLE,MPV,2000KG_FB`. If Lalamove refuses one, the log names it and
+repeats the list their API accepts for your account, so you can copy from that
+rather than guess.
+
+A refused vehicle does not break the checkout — that option simply falls back to
+its indicative rate while the others quote live.
+
 **Stay on the sandbox URL until you have placed a test booking end to end.** The
 production URL books real riders who really arrive. When you are satisfied:
 

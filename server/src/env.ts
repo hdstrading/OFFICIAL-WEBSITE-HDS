@@ -216,6 +216,19 @@ export const env = {
      * Generate with:  openssl rand -hex 16
      */
     webhookToken: process.env.LALAMOVE_WEBHOOK_TOKEN ?? '',
+
+    /**
+     * Which vehicles to offer, cheapest first.
+     *
+     * Service codes are per market. `TRUCK330` exists in Lalamove's catalogue
+     * but not in the Philippines, and quoting it here returns 422 on every
+     * request — so this is configuration rather than a constant, and a code
+     * they stop offering is an .env edit rather than a deployment.
+     */
+    serviceTypes: (process.env.LALAMOVE_SERVICE_TYPES ?? 'MOTORCYCLE,MPV,2000KG_FB')
+      .split(',')
+      .map((code) => code.trim().toUpperCase())
+      .filter(Boolean),
   },
 
   transportify: {

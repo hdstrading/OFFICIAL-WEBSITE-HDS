@@ -146,12 +146,50 @@ function lalamoveHeaders(method: string, path: string, body: string) {
   };
 }
 
-/** Vehicle types we offer, cheapest first. */
-const LALAMOVE_SERVICES = [
-  { code: 'MOTORCYCLE', label: 'Lalamove Motorcycle', hint: 'Up to 20 kg — small chemical orders' },
-  { code: 'MPV', label: 'Lalamove MPV', hint: 'Up to 300 kg — cases and dispensers' },
-  { code: 'TRUCK330', label: 'Lalamove Truck', hint: 'Up to 1,000 kg — drums and machinery' },
-] as const;
+/**
+ * Vehicles Lalamove runs in the Philippines.
+ *
+ * SERVICE CODES ARE PER MARKET, which is not obvious and is easy to get wrong:
+ * `TRUCK330` is a real Lalamove vehicle, just not here, and quoting it against
+ * the PH market returns 422 ERR_INVALID_FIELD on every request. The codes below
+ * are the ones their API itself named as valid for this account.
+ *
+ * The indicative rates are only used when the API cannot be reached, so they do
+ * not have to be exact — they have to be defensible, and high enough that
+ * falling back never quietly sells a delivery below cost.
+ */
+const LALAMOVE_VEHICLES: Record<string, { label: string; hint: string; base: number; perKm: number }> = {
+  MOTORCYCLE: { label: 'Lalamove Motorcycle', hint: 'Up to 20 kg — small chemical orders', base: 60, perKm: 8 },
+  SEDAN: { label: 'Lalamove Sedan', hint: 'Up to 200 kg — boxed supplies', base: 160, perKm: 16 },
+  MPV: { label: 'Lalamove MPV', hint: 'Up to 300 kg — cases and dispensers', base: 260, perKm: 22 },
+  VAN: { label: 'Lalamove Van', hint: 'Up to 600 kg — bulk cases', base: 400, perKm: 26 },
+  '800KG_PICK_UP_TRUCK': { label: 'Lalamove Pick-up Truck', hint: 'Up to 800 kg — drums and equipment', base: 600, perKm: 30 },
+  '2000KG_FB': { label: 'Lalamove Closed Van (2 tonnes)', hint: 'Up to 2,000 kg — pallets and machinery', base: 900, perKm: 38 },
+  TRUCK550: { label: 'Lalamove Truck', hint: 'Heavy loads', base: 1100, perKm: 42 },
+  '3000KG_TRUCK': { label: 'Lalamove Truck (3 tonnes)', hint: 'Up to 3,000 kg', base: 1400, perKm: 48 },
+};
+
+/**
+ * A code we have no description for still has to be offerable, so the shop is
+ * not blocked on this file whenever Lalamove adds a vehicle. `2000KG_FB`
+ * becomes "Lalamove 2000KG FB".
+ */
+function describeVehicle(code: string) {
+  return (
+    LALAMOVE_VEHICLES[code] ?? {
+      label: `Lalamove ${code.replace(/_/g, ' ')}`,
+      hint: 'Courier delivery',
+      base: 260,
+      perKm: 22,
+    }
+  );
+}
+
+/** What the checkout offers, cheapest first. Configurable, because the right ladder depends on what you sell. */
+const LALAMOVE_SERVICES = env.lalamove.serviceTypes.map((code) => ({
+  code,
+  ...describeVehicle(code),
+}));
 
 async function lalamoveQuote(
   address: DeliveryAddress,
@@ -186,7 +224,19 @@ async function lalamoveQuote(
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) {
-      console.warn('Lalamove quotation failed:', response.status, await response.text());
+      const detail = await response.text();
+      // A rejected serviceType is the one failure that looks alarming and is
+      // purely configuration: the codes differ per market, so a vehicle valid
+      // in another country is refused here on every request.
+      if (response.status === 422 && detail.includes('serviceType')) {
+        console.warn(
+          `Lalamove does not offer "${serviceCode}" in ${env.lalamove.market}. ` +
+            'Set LALAMOVE_SERVICE_TYPES to codes it accepts — the list it returned follows.\n' +
+            detail,
+        );
+      } else {
+        console.warn('Lalamove quotation failed:', response.status, detail);
+      }
       return null;
     }
     const body = (await response.json()) as {
@@ -203,12 +253,7 @@ async function lalamoveQuote(
 
 /** Indicative Lalamove pricing used when we cannot reach their API. */
 function lalamoveIndicative(serviceCode: string, km: number): number {
-  const table: Record<string, { base: number; perKm: number }> = {
-    MOTORCYCLE: { base: 60, perKm: 8 },
-    MPV: { base: 260, perKm: 22 },
-    TRUCK330: { base: 800, perKm: 35 },
-  };
-  const rate = table[serviceCode] ?? table.MPV;
+  const rate = describeVehicle(serviceCode);
   return money(rate.base + km * rate.perKm);
 }
 
