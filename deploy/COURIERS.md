@@ -92,6 +92,56 @@ production URL books real riders who really arrive. When you are satisfied:
 LALAMOVE_BASE_URL=https://rest.lalamove.com
 ```
 
+### The webhook
+
+Lalamove pushes driver progress — assigned, collected, delivered, cancelled — to
+a URL you register in the Partner Portal. Without it, an order stays at whatever
+status it had when staff pressed Dispatch until the warehouse catches up.
+
+Generate a secret first:
+
+```
+openssl rand -hex 16
+```
+
+Put it in `.env` as `LALAMOVE_WEBHOOK_TOKEN`, restart, then register this URL in
+the Partner Portal under **Webhooks**, with your value in place of the last
+segment:
+
+```
+https://hdstradingopc.com/api/webhooks/lalamove/<your-token>
+```
+
+**The URL is the credential.** Lalamove's v3 webhooks are not signed the way the
+payment gateway's are, so there is no body signature to verify. Two things stand
+in for one:
+
+- the secret segment, which makes the endpoint unguessable — with the token
+  unset the route refuses everything rather than sitting open;
+- the handler only ever acts on a booking reference it created itself, so an
+  update naming an order we did not book is acknowledged and ignored.
+
+Nothing in that path touches money. The worst a forged request could do, having
+first guessed both the URL and a live Lalamove order id, is move one order's
+delivery status.
+
+What the customer sees:
+
+| Lalamove | Customer sees |
+| --- | --- |
+| `ASSIGNING_DRIVER` | Ready for dispatch — nobody has collected it yet |
+| `ON_GOING`, `PICKED_UP` | On the way |
+| `COMPLETED` | Delivered |
+| `CANCELED`, `EXPIRED`, `REJECTED` | Back to ready for dispatch, booking released |
+
+That last row matters: when a driver cancels, the goods are still on your shelf.
+The booking is cleared so staff can dispatch again, and it is logged as a
+warning rather than leaving the order stranded as "on the way".
+
+Order status is **forward-only**. The warehouse and the courier both report on
+the same order and see different halves of the journey, so a late or
+out-of-order event cannot drag a delivered order back to "on the way".
+
 ### How a booking now works
 
 Staff press **Dispatch** on the order in the staff portal. The server does not

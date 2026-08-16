@@ -260,7 +260,9 @@ export async function syncOrderStatuses(): Promise<void> {
         const mapped = mapInventoryStatus(remote.status);
         if (!mapped || mapped === local.orderStatus) continue;
 
-        orders.setOrderStatus(local.id, mapped);
+        // Forward only. Once a courier has collected an order, the warehouse
+        // still calling it `packed` must not drag the customer's tracking back.
+        if (!orders.advanceOrderStatus(local.id, mapped)) continue;
         console.info(
           `Order ${local.reference}: ${local.orderStatus} → ${mapped} ` +
             `(warehouse says ${remote.status}` +

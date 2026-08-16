@@ -158,6 +158,19 @@ export const env = {
     market: process.env.LALAMOVE_MARKET ?? 'PH',
     /** Sandbox by default so nobody books a real rider by accident. */
     baseUrl: process.env.LALAMOVE_BASE_URL ?? 'https://rest.sandbox.lalamove.com',
+
+    /**
+     * Secret path segment on the webhook URL Lalamove posts driver updates to.
+     *
+     * The URL is the credential. Lalamove's v3 webhooks are not signed the way
+     * the payment gateway's are, so an endpoint at a guessable path would accept
+     * status updates from anyone who found it. A random segment makes the URL
+     * itself unguessable, and the handler additionally refuses to act on any
+     * booking reference it did not create.
+     *
+     * Generate with:  openssl rand -hex 16
+     */
+    webhookToken: process.env.LALAMOVE_WEBHOOK_TOKEN ?? '',
   },
 
   transportify: {

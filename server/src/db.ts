@@ -1120,6 +1120,66 @@ export const orders = {
   setOrderStatus(id: string, status: OrderStatus): boolean {
     return db.prepare('UPDATE orders SET order_status = ? WHERE id = ?').run(status, id).changes > 0;
   },
+
+  /**
+   * Moves an order forward, and only forward.
+   *
+   * Two systems report on the same order now: the warehouse says when it was
+   * picked and packed, the courier says when it was collected and delivered.
+   * They observe different halves of the journey and they do not agree about
+   * the moment in between — the warehouse may still be calling an order
+   * `packed` while the rider is already carrying it. Letting each write freely
+   * makes the customer's tracking flip back and forth on whichever polled last.
+   *
+   * Ranking the states and refusing to go backwards removes the argument
+   * without either system having to know the other exists.
+   *
+   * Cancellation is the exception, because it can legitimately interrupt at any
+   * point — except after delivery, where the goods have already arrived and the
+   * instrument is a return, not a cancellation.
+   */
+  advanceOrderStatus(id: string, status: OrderStatus): boolean {
+    const rank: Record<OrderStatus, number> = {
+      pending_payment: 0,
+      processing: 1,
+      ready_for_dispatch: 2,
+      in_transit: 3,
+      delivered: 4,
+      cancelled: 5,
+    };
+    const current = (db.prepare('SELECT order_status FROM orders WHERE id = ?').get(id) as
+      | { order_status: OrderStatus }
+      | undefined)?.order_status;
+    if (!current) return false;
+    if (current === 'cancelled') return false;
+    if (status === 'cancelled') return current === 'delivered' ? false : this.setOrderStatus(id, status);
+    if (rank[status] <= rank[current]) return false;
+    return this.setOrderStatus(id, status);
+  },
+
+  byCourierRef(ref: string): Order | null {
+    const row = db
+      .prepare("SELECT * FROM orders WHERE courier_booking_ref = ? AND courier_booking_ref <> ''")
+      .get(ref) as OrderRow | undefined;
+    return row ? toOrder(row) : null;
+  },
+
+  /** Updates only the tracking link, leaving the booking reference alone. */
+  setCourierTrackingUrl(id: string, trackingUrl: string): boolean {
+    return (
+      db.prepare('UPDATE orders SET courier_tracking_url = ? WHERE id = ?').run(trackingUrl, id)
+        .changes > 0
+    );
+  },
+
+  /** Releases a booking the courier cancelled, so staff can dispatch again. */
+  clearCourierBooking(id: string): boolean {
+    return (
+      db
+        .prepare('UPDATE orders SET courier_booking_ref = NULL, courier_tracking_url = NULL WHERE id = ?')
+        .run(id).changes > 0
+    );
+  },
   setCourierBooking(id: string, ref: string, trackingUrl: string | null): boolean {
     return (
       db
