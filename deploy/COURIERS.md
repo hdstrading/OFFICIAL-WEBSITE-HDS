@@ -1,0 +1,174 @@
+# Lalamove and Transportify — going live
+
+Both couriers appear on the checkout page today, priced from our own distance
+table and labelled as indicative. This is what turns them into real, bookable
+quotes.
+
+---
+
+## The thing that is not obvious
+
+**API keys alone will not do it.**
+
+Lalamove's v3 API takes *coordinates* on every stop, not an address string. The
+checkout collects a street, barangay, city and province — no coordinates. So
+before this change, `lalamoveQuote` returned `null` on every single call, and
+every courier price you have ever seen came from the fallback table. Pasting in
+live keys would not have altered one figure.
+
+The order to switch things on is therefore:
+
+1. **Geocoding first** — without it, nothing else matters.
+2. Lalamove keys.
+3. Transportify, when you have their partner documentation.
+
+---
+
+## 1. Geocoding (do this first)
+
+At [console.cloud.google.com](https://console.cloud.google.com):
+
+1. Create a project.
+2. Enable the **Geocoding API** specifically — not "Maps JavaScript API", which
+   is a different product and will not answer these requests.
+3. Create an API key, then **restrict it to the Geocoding API**. An unrestricted
+   key that leaks can be used against your billing account for anything Google
+   sells.
+4. Enable billing. The standing $200/month free credit covers roughly 40,000
+   lookups; a shop doing a hundred orders a month will not approach it.
+
+Then on the website VPS, in `.env`:
+
+```
+GOOGLE_MAPS_API_KEY=AIza...
+```
+
+Restart, and check it works from the checkout page — enter a real address and
+watch whether the delivery prices change when you complete the province field.
+They should, because the distance is now measured rather than assumed.
+
+**Results are cached in the database.** The same barangay is looked up once and
+never paid for again. Successful lookups are kept for a year, failures for a
+week, because an address Google cannot find today may simply be missing from
+its data rather than wrong.
+
+### Precision matters more than you would think
+
+Google answers an address it only half-recognises by returning the **centre of
+the city**, with no error. Used for a booking, that sends a rider to the middle
+of Pasig instead of to your customer, at a price that looks perfectly
+reasonable.
+
+So every result is graded:
+
+| Google says | We treat it as | Used for |
+| --- | --- | --- |
+| `ROOFTOP` | exact | Live quotes **and** bookings |
+| `RANGE_INTERPOLATED` | exact | Live quotes **and** bookings |
+| `GEOMETRIC_CENTER`, `APPROXIMATE`, or any partial match | approximate | Distance estimate only — never sent to a courier |
+| nothing found | none | Falls back to the assumed 18 km |
+
+An approximate result still improves the in-house price, because that is our own
+van and our own risk. It never reaches Lalamove.
+
+---
+
+## 2. Lalamove
+
+From [partnerportal.lalamove.com](https://partnerportal.lalamove.com), take the
+API key and secret, then in `.env`:
+
+```
+LALAMOVE_API_KEY=...
+LALAMOVE_API_SECRET=...
+LALAMOVE_MARKET=PH
+LALAMOVE_BASE_URL=https://rest.sandbox.lalamove.com
+```
+
+**Stay on the sandbox URL until you have placed a test booking end to end.** The
+production URL books real riders who really arrive. When you are satisfied:
+
+```
+LALAMOVE_BASE_URL=https://rest.lalamove.com
+```
+
+### How a booking now works
+
+Staff press **Dispatch** on the order in the staff portal. The server does not
+reuse the quotation from checkout — that expires within minutes, while an order
+paid by bank deposit might be dispatched the next morning. It re-quotes against
+the same vehicle type and books the fresh quotation.
+
+Two consequences worth knowing:
+
+- **The price can move between checkout and dispatch** — surge pricing, or a
+  road route longer than the straight-line estimate. The response tells you what
+  Lalamove charged against what the customer paid, and the difference is logged.
+  It comes out of that order's margin, so it is worth watching for the first few.
+- **An order already booked cannot be booked twice.** Pressing Dispatch again
+  returns an error rather than sending a second rider.
+
+If the address only geocodes approximately, Dispatch refuses and tells you to
+book in the Lalamove app, where you can place the pin by hand. That is the
+correct outcome: better a manual booking than a rider sent to the wrong street.
+
+---
+
+## 3. Transportify
+
+**This one is not finished, and I would rather say so than have you find out.**
+
+Transportify does not publish its booking API — access is issued per partner
+account, with documentation that comes with it. The client in
+`server/src/lib/delivery.ts` was written from assumption: the endpoint path, the
+auth header and the payload shape are all guesses.
+
+So today, with or without a key, Transportify shows an indicative rate and
+`isLiveQuote: false`.
+
+When you have partner access, send me their API documentation and it is a small
+job to make it real — the surrounding machinery, the option on the checkout
+page, the fallback and the pricing all already work. Until then, leave
+`TRANSPORTIFY_API_KEY` blank: a key against a guessed endpoint just adds a
+failing request to every checkout.
+
+---
+
+## Checking your work
+
+Once geocoding and Lalamove keys are in, place a test order to a real address
+and look at the delivery options. A live quote is one where the price is not a
+round number from the table below:
+
+| Indicative fallback | Base | Per km |
+| --- | --- | --- |
+| Motorcycle | ₱60 | ₱8 |
+| MPV | ₱260 | ₱22 |
+| Truck | ₱800 | ₱35 |
+| Transportify van | ₱430 | ₱26 |
+
+The checkout also marks each option: an option quoted live loses the
+"Indicative rate — confirmed before dispatch" note from its description.
+
+To confirm geocoding specifically, watch the log while quoting a delivery. A
+misconfigured key is reported loudly rather than silently degrading:
+
+```
+Geocoding rejected (REQUEST_DENIED): ... Check GOOGLE_MAPS_API_KEY and that
+billing is enabled on the Google Cloud project.
+```
+
+The precision rules have their own test, which stubs Google and needs no key:
+
+```
+npm run test:geocode
+```
+
+---
+
+## If you never enable any of this
+
+Nothing breaks. Every courier keeps its indicative price, the customer is told
+the fee is confirmed before dispatch, and staff book the rider in the courier's
+own app. That is a completely workable way to run the shop — this is about
+accuracy at checkout, not about whether orders can be delivered.

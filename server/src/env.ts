@@ -141,6 +141,17 @@ export const env = {
     contactPhone: process.env.WAREHOUSE_CONTACT_PHONE ?? '+639171637359',
   },
 
+  /**
+   * Google Geocoding, used to turn a typed address into coordinates.
+   *
+   * The couriers price on coordinates, not on address strings, so without this
+   * every Lalamove and Transportify figure is an estimate from our own distance
+   * table however valid their API keys are. Results are cached in the database,
+   * so the same barangay is only ever paid for once.
+   */
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
+  geocodeTimeoutMs: Number(process.env.GEOCODE_TIMEOUT_MS ?? 6000),
+
   lalamove: {
     apiKey: process.env.LALAMOVE_API_KEY ?? '',
     apiSecret: process.env.LALAMOVE_API_SECRET ?? '',
@@ -235,5 +246,17 @@ export const paymentsConfigured = Boolean(env.paymongo.secretKey);
 /** The link is usable only with both an address and a key. */
 export const inventoryConfigured = Boolean(env.inventory.apiUrl && env.inventory.apiKey);
 
+export const geocodingConfigured = Boolean(env.googleMapsApiKey);
+
 export const lalamoveConfigured = Boolean(env.lalamove.apiKey && env.lalamove.apiSecret);
+
+/**
+ * Whether a courier can actually be given a live price.
+ *
+ * Keys alone are not enough: without geocoding there are no coordinates to
+ * quote against, so the request cannot be made at all. Exported so the staff
+ * portal can say which of the two is missing rather than leaving somebody to
+ * wonder why prices are still estimates after they pasted their keys in.
+ */
+export const liveCourierQuotesPossible = geocodingConfigured && lalamoveConfigured;
 export const transportifyConfigured = Boolean(env.transportify.apiKey);

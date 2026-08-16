@@ -21,7 +21,8 @@
     "clean": "rm -rf client/dist server/dist node_modules/.cache",
     "backup": "node scripts/backup-db.mjs",
     "backup:list": "node scripts/backup-db.mjs --list",
-    "restore": "node scripts/restore-db.mjs"
+    "restore": "node scripts/restore-db.mjs",
+    "test:geocode": "npm run build --workspace server && node server/test/geocode.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { env, lalamoveConfigured, transportifyConfigured } from '../env.js';
 import { FREE_DELIVERY_THRESHOLD, money } from './pricing.js';
+import { geocodeAddress, type GeocodePrecision } from './geocode.js';
 import type { DeliveryAddress, DeliveryOption } from '../types.js';
 
 /**
@@ -26,24 +27,42 @@ function haversineKm(aLat: number, aLng: number, bLat: number, bLng: number): nu
 }
 
 /**
- * Distance from our warehouse to the delivery address. Falls back to a
- * mid-range assumption when the customer has not pinned a map location.
+ * Where the delivery is going, and how sure we are.
+ *
+ * `precision` decides what the coordinates may be used for. An `approximate`
+ * result is a city or district centre: good enough to work out roughly how far
+ * a van must travel, but not a place to send a rider, because it is not the
+ * customer's address. Only `exact` is allowed to reach a courier.
  */
-function distanceKm(address: DeliveryAddress): { km: number; estimated: boolean } {
-  if (typeof address.lat === 'number' && typeof address.lng === 'number') {
-    return {
-      km: haversineKm(env.warehouse.lat, env.warehouse.lng, address.lat, address.lng),
-      estimated: false,
-    };
+interface ResolvedDestination {
+  lat: number;
+  lng: number;
+  precision: GeocodePrecision;
+  km: number;
+  /** True when the distance is a guess rather than derived from coordinates. */
+  estimated: boolean;
+}
+
+/** The typical Metro Manila / Rizal run, used when nothing better is known. */
+const ASSUMED_KM = 18;
+
+async function resolveDestination(address: DeliveryAddress): Promise<ResolvedDestination> {
+  const located = await geocodeAddress(address);
+  if (located.precision === 'none') {
+    return { lat: 0, lng: 0, precision: 'none', km: ASSUMED_KM, estimated: true };
   }
-  // No pin — assume a typical Metro Manila / Rizal run.
-  return { km: 18, estimated: true };
+  return {
+    lat: located.lat,
+    lng: located.lng,
+    precision: located.precision,
+    km: haversineKm(env.warehouse.lat, env.warehouse.lng, located.lat, located.lng),
+    estimated: false,
+  };
 }
 
 /* ------------------------------------------------------------- in-house fleet */
 
-function inHouseOption(subtotal: number, address: DeliveryAddress): DeliveryOption {
-  const { km } = distanceKm(address);
+function inHouseOption(subtotal: number, km: number): DeliveryOption {
   const free = subtotal >= FREE_DELIVERY_THRESHOLD;
 
   // ₱150 base covers the first 10 km, then ₱18/km.
@@ -104,9 +123,13 @@ const LALAMOVE_SERVICES = [
 
 async function lalamoveQuote(
   address: DeliveryAddress,
+  destination: ResolvedDestination,
   serviceCode: string,
 ): Promise<{ fee: number; quotationId: string } | null> {
-  if (!lalamoveConfigured || address.lat === undefined || address.lng === undefined) return null;
+  // Only an exact location may be quoted. Quoting a city centroid produces a
+  // plausible price for a journey to the wrong place, and the booking that
+  // follows would send a rider there.
+  if (!lalamoveConfigured || destination.precision !== 'exact') return null;
 
   const path = '/v3/quotations';
   const payload = JSON.stringify({
@@ -119,7 +142,7 @@ async function lalamoveQuote(
           address: env.warehouse.address,
         },
         {
-          coordinates: { lat: String(address.lat), lng: String(address.lng) },
+          coordinates: { lat: String(destination.lat), lng: String(destination.lng) },
           address: formatAddress(address),
         },
       ],
@@ -168,11 +191,10 @@ function lalamoveIndicative(serviceCode: string, km: number): number {
  * price and confirm the exact fee before dispatch.
  */
 async function transportifyQuote(
-  address: DeliveryAddress,
-  km: number,
+  destination: ResolvedDestination,
 ): Promise<{ fee: number; quotationId?: string; live: boolean }> {
-  const indicative = money(430 + km * 26);
-  if (!transportifyConfigured || address.lat === undefined || address.lng === undefined) {
+  const indicative = money(430 + destination.km * 26);
+  if (!transportifyConfigured || destination.precision !== 'exact') {
     return { fee: indicative, live: false };
   }
 
@@ -187,7 +209,7 @@ async function transportifyQuote(
         service_type: 'L300_VAN',
         stops: [
           { latitude: env.warehouse.lat, longitude: env.warehouse.lng },
-          { latitude: address.lat, longitude: address.lng },
+          { latitude: destination.lat, longitude: destination.lng },
         ],
       }),
       signal: AbortSignal.timeout(8000),
@@ -226,11 +248,14 @@ export async function quoteDeliveryOptions(
   subtotal: number,
   address: DeliveryAddress,
 ): Promise<DeliveryOption[]> {
-  const { km, estimated } = distanceKm(address);
+  // Resolved once and shared: geocoding is a paid, rate-limited call and every
+  // option below needs the same answer.
+  const destination = await resolveDestination(address);
+  const { km, estimated } = destination;
 
   const lalamoveOptions = await Promise.all(
     LALAMOVE_SERVICES.map(async (service): Promise<DeliveryOption> => {
-      const live = await lalamoveQuote(address, service.code);
+      const live = await lalamoveQuote(address, destination, service.code);
       return {
         provider: 'lalamove',
         serviceCode: service.code,
@@ -246,10 +271,10 @@ export async function quoteDeliveryOptions(
     }),
   );
 
-  const transportify = await transportifyQuote(address, km);
+  const transportify = await transportifyQuote(destination);
 
   return [
-    inHouseOption(subtotal, address),
+    inHouseOption(subtotal, km),
     pickupOption(),
     ...lalamoveOptions,
     {
@@ -283,13 +308,54 @@ export async function resolveDeliveryOption(
   );
 }
 
-/** Places the actual courier booking once an order is paid and packed. */
-export async function bookLalamoveDelivery(
-  quotationId: string,
-  address: DeliveryAddress,
-): Promise<{ bookingRef: string; trackingUrl: string | null } | null> {
-  if (!lalamoveConfigured) return null;
+export interface LalamoveBooking {
+  bookingRef: string;
+  trackingUrl: string | null;
+  /** What the courier charges now, which is what we actually pay. */
+  fee: number;
+}
 
+/**
+ * Books the courier for an order that is packed and ready.
+ *
+ * IT RE-QUOTES FIRST, and it must. A Lalamove quotation is valid for minutes,
+ * whereas the one captured at checkout may be days old by the time staff press
+ * Dispatch — a bank deposit confirmed the next morning, an order held for a
+ * delivery date. Booking against that id fails, and it fails at the worst
+ * moment: the goods are packed and the customer is waiting.
+ *
+ * The fresh price is returned rather than silently accepted, because it may
+ * differ from what the customer was charged — surge pricing, a longer route
+ * than the straight-line estimate — and that difference comes out of the
+ * margin on the order. Staff should see it rather than find it on the invoice.
+ */
+export async function bookLalamoveDelivery(
+  address: DeliveryAddress,
+  serviceCode: string,
+): Promise<{ ok: true; booking: LalamoveBooking } | { ok: false; reason: string }> {
+  if (!lalamoveConfigured) {
+    return { ok: false, reason: 'Lalamove is not configured on this server.' };
+  }
+
+  const destination = await resolveDestination(address);
+  if (destination.precision !== 'exact') {
+    return {
+      ok: false,
+      reason:
+        'The delivery address could not be pinned precisely enough to send a rider to. ' +
+        'Book this one in the Lalamove app, where you can place the pin by hand.',
+    };
+  }
+
+  const fresh = await lalamoveQuote(address, destination, serviceCode);
+  if (!fresh) {
+    return {
+      ok: false,
+      reason: 'Lalamove would not quote this delivery just now. Try again, or book in their app.',
+    };
+  }
+
+  const quotationId = fresh.quotationId;
   const path = '/v3/orders';
   const payload = JSON.stringify({
     data: {
@@ -319,16 +385,26 @@ export async function bookLalamoveDelivery(
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
-      console.error('Lalamove booking failed:', response.status, await response.text());
-      return null;
+      const detail = await response.text();
+      console.error('Lalamove booking failed:', response.status, detail);
+      return { ok: false, reason: `Lalamove refused the booking (${response.status}).` };
     }
     const body = (await response.json()) as {
       data?: { orderId?: string; shareLink?: string };
     };
-    if (!body.data?.orderId) return null;
-    return { bookingRef: body.data.orderId, trackingUrl: body.data.shareLink ?? null };
+    if (!body.data?.orderId) {
+      return { ok: false, reason: 'Lalamove accepted the request but returned no booking id.' };
+    }
+    return {
+      ok: true,
+      booking: {
+        bookingRef: body.data.orderId,
+        trackingUrl: body.data.shareLink ?? null,
+        fee: fresh.fee,
+      },
+    };
   } catch (error) {
     console.error('Lalamove booking error:', (error as Error).message);
-    return null;
+    return { ok: false, reason: `Could not reach Lalamove: ${(error as Error).message}` };
   }
 }

@@ -306,26 +306,55 @@ adminRouter.post('/orders/:id/dispatch', async (req, res) => {
     res.status(404).json({ error: 'That order no longer exists.' });
     return;
   }
-  if (order.delivery.provider !== 'lalamove' || !order.delivery.quotationId) {
+  if (order.delivery.provider !== 'lalamove') {
     res.status(400).json({
       error:
         'This order was not quoted through Lalamove. Dispatch it with your own fleet or book the courier manually.',
     });
     return;
   }
-
-  const booking = await bookLalamoveDelivery(order.delivery.quotationId, order.address);
-  if (!booking) {
-    res.status(502).json({
-      error:
-        'Lalamove could not accept the booking — the quotation may have expired. Re-quote or book manually in the Lalamove app.',
+  if (order.courierBookingRef) {
+    res.status(409).json({
+      error: `This order is already booked with Lalamove (${order.courierBookingRef}). Booking again would send a second rider.`,
     });
     return;
   }
 
-  orders.setCourierBooking(order.id, booking.bookingRef, booking.trackingUrl);
+  // The quotation captured at checkout is long expired by now, so this re-quotes
+  // against the same vehicle and books the fresh one.
+  const result = await bookLalamoveDelivery(order.address, order.delivery.serviceCode);
+  if (!result.ok) {
+    res.status(502).json({ error: result.reason });
+    return;
+  }
+
+  orders.setCourierBooking(order.id, result.booking.bookingRef, result.booking.trackingUrl);
   orders.setOrderStatus(order.id, 'in_transit');
-  res.json({ order: orders.byId(order.id) });
+
+  // Surfaced rather than swallowed: the difference between what the customer
+  // paid for delivery and what the rider costs today comes out of this order's
+  // margin, and staff can only act on it if they are told.
+  const paid = order.deliveryFee;
+  const charged = result.booking.fee;
+  const drift = Math.round((charged - paid) * 100) / 100;
+  if (Math.abs(drift) >= 1) {
+    console.warn(
+      `Lalamove charged ${charged} for ${order.reference}, customer paid ${paid} (${drift > 0 ? '+' : ''}${drift}).`,
+    );
+  }
+
+  res.json({
+    order: orders.byId(order.id),
+    courierFee: charged,
+    quotedFee: paid,
+    ...(Math.abs(drift) >= 1
+      ? {
+          notice:
+            `Lalamove's price today is ${charged.toFixed(2)}, against the ${paid.toFixed(2)} ` +
+            `charged at checkout — a difference of ${drift > 0 ? '+' : ''}${drift.toFixed(2)}.`,
+        }
+      : {}),
+  });
 });
 
 /* -------------------------------------------------------- inventory system */

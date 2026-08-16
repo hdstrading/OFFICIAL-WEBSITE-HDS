@@ -167,6 +167,17 @@ db.exec(`
     /* Backoff: the worker ignores an order until this time has passed. */
     inventory_next_try   TEXT
   );
+  /* Cached address -> coordinate lookups. Each miss costs money and latency,
+     and the same barangays recur constantly, so answers are kept. */
+  CREATE TABLE IF NOT EXISTS geocodes (
+    key        TEXT PRIMARY KEY,
+    lat        REAL NOT NULL,
+    lng        REAL NOT NULL,
+    precision  TEXT NOT NULL,
+    formatted  TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     email      TEXT NOT NULL,
@@ -979,6 +990,47 @@ const toOrder = (r: OrderRow): Order => ({
   inventoryError: r.inventory_error,
   inventoryAttempts: r.inventory_attempts ?? 0,
 });
+
+export const geocodes = {
+  /**
+   * A cached lookup, if it is still within its lifetime.
+   *
+   * Hits and misses expire on different schedules: a building's coordinates do
+   * not change, whereas an address Google could not find today may simply have
+   * been missing from its data, so failures are retried sooner.
+   */
+  get(key: string, hitTtlDays: number, missTtlDays: number) {
+    const row = db
+      .prepare('SELECT lat, lng, precision, formatted, created_at FROM geocodes WHERE key = ?')
+      .get(key) as
+      | { lat: number; lng: number; precision: string; formatted: string; created_at: string }
+      | undefined;
+    if (!row) return null;
+
+    const ttlDays = row.precision === 'none' ? missTtlDays : hitTtlDays;
+    const ageDays = (Date.now() - new Date(`${row.created_at}Z`).getTime()) / 86_400_000;
+    if (!Number.isFinite(ageDays) || ageDays > ttlDays) return null;
+
+    return {
+      lat: row.lat,
+      lng: row.lng,
+      precision: row.precision as 'exact' | 'approximate' | 'none',
+      formatted: row.formatted,
+    };
+  },
+  put(key: string, result: { lat: number; lng: number; precision: string; formatted: string }) {
+    db.prepare(
+      `INSERT INTO geocodes (key, lat, lng, precision, formatted, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET
+         lat = excluded.lat, lng = excluded.lng, precision = excluded.precision,
+         formatted = excluded.formatted, created_at = excluded.created_at`,
+    ).run(key, result.lat, result.lng, result.precision, result.formatted);
+  },
+  count(): number {
+    return (db.prepare('SELECT COUNT(*) AS n FROM geocodes').get() as { n: number }).n;
+  },
+};
 
 export const orders = {
   insert(o: Order): Order {
