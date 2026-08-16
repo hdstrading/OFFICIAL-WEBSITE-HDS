@@ -152,6 +152,35 @@ export const env = {
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
   geocodeTimeoutMs: Number(process.env.GEOCODE_TIMEOUT_MS ?? 6000),
 
+  /**
+   * A second, separate key for the map the customer sees at checkout.
+   *
+   * It cannot be the geocoding key above. That one is locked to this server's
+   * IP address, which a browser can never satisfy; this one is restricted by
+   * referrer instead, and is necessarily public — it is in the page source by
+   * design, which is why it must not be the key that can spend on anything else.
+   *
+   * Blank simply hides the map. The "use my current location" button does not
+   * need it and keeps working.
+   */
+  googleMapsBrowserKey: process.env.GOOGLE_MAPS_BROWSER_KEY ?? '',
+
+  /**
+   * Whether a courier may only be used when the address resolves to an exact
+   * building.
+   *
+   * Left off, because Philippine addressing rarely satisfies it. A street like
+   * "2 Ballecer Extn., South Signal Village" resolves to the purok it sits in
+   * rather than the door — a few hundred metres out, not the wrong city — and
+   * refusing to quote on that would leave the couriers unusable for most real
+   * orders. The rider is sent the full address text and the customer's phone
+   * number, which is how a delivery in Metro Manila actually completes.
+   *
+   * Turn it on if you would rather book by hand than have a rider arrive at the
+   * end of the right street.
+   */
+  requireExactPin: bool(process.env.COURIER_REQUIRE_EXACT_PIN, false),
+
   lalamove: {
     apiKey: process.env.LALAMOVE_API_KEY ?? '',
     apiSecret: process.env.LALAMOVE_API_SECRET ?? '',

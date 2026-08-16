@@ -636,6 +636,8 @@ publicRouter.get('/site-info', (_req, res) => {
     freeDeliveryThreshold: 5000,
     depositPercent: env.bookingDepositPercent,
     paymentsLive: paymentsConfigured,
+    /** Public by design and restricted by referrer. Blank simply hides the map. */
+    mapsBrowserKey: env.googleMapsBrowserKey,
     timeSlots: TIME_SLOTS,
     counts: {
       products: products.count(),

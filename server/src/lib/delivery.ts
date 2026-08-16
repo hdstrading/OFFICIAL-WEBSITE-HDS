@@ -46,6 +46,28 @@ interface ResolvedDestination {
 /** The typical Metro Manila / Rizal run, used when nothing better is known. */
 const ASSUMED_KM = 18;
 
+/**
+ * Whether a resolved location is good enough to hand to a courier.
+ *
+ * An address that resolved to nothing never is — there is no pin at all, only
+ * an assumption, and pricing a real delivery on a guess is how you send a rider
+ * to another province.
+ *
+ * An `approximate` one usually is, and this is a judgement about Philippine
+ * addressing rather than about geocoding. A street named in a subdivision
+ * commonly resolves to the purok containing it: a few hundred metres out, not
+ * the wrong city. The rider receives the address text and the customer's phone
+ * number alongside the pin, which is how these deliveries actually complete.
+ * Refusing them all would leave the couriers unusable for most real orders.
+ *
+ * COURIER_REQUIRE_EXACT_PIN tightens it for anyone who would rather book by
+ * hand than have a rider arrive at the end of the right street.
+ */
+function pinGoodEnoughForCourier(destination: ResolvedDestination): boolean {
+  if (destination.precision === 'none') return false;
+  return env.requireExactPin ? destination.precision === 'exact' : true;
+}
+
 async function resolveDestination(address: DeliveryAddress): Promise<ResolvedDestination> {
   const located = await geocodeAddress(address);
   if (located.precision === 'none') {
@@ -126,10 +148,7 @@ async function lalamoveQuote(
   destination: ResolvedDestination,
   serviceCode: string,
 ): Promise<{ fee: number; quotationId: string } | null> {
-  // Only an exact location may be quoted. Quoting a city centroid produces a
-  // plausible price for a journey to the wrong place, and the booking that
-  // follows would send a rider there.
-  if (!lalamoveConfigured || destination.precision !== 'exact') return null;
+  if (!lalamoveConfigured || !pinGoodEnoughForCourier(destination)) return null;
 
   const path = '/v3/quotations';
   const payload = JSON.stringify({
@@ -194,7 +213,7 @@ async function transportifyQuote(
   destination: ResolvedDestination,
 ): Promise<{ fee: number; quotationId?: string; live: boolean }> {
   const indicative = money(430 + destination.km * 26);
-  if (!transportifyConfigured || destination.precision !== 'exact') {
+  if (!transportifyConfigured || !pinGoodEnoughForCourier(destination)) {
     return { fee: indicative, live: false };
   }
 
@@ -338,12 +357,15 @@ export async function bookLalamoveDelivery(
   }
 
   const destination = await resolveDestination(address);
-  if (destination.precision !== 'exact') {
+  if (!pinGoodEnoughForCourier(destination)) {
     return {
       ok: false,
       reason:
-        'The delivery address could not be pinned precisely enough to send a rider to. ' +
-        'Book this one in the Lalamove app, where you can place the pin by hand.',
+        destination.precision === 'none'
+          ? 'This address could not be located at all, so there is no pin to send a rider to. ' +
+            'Check the address, or book in the Lalamove app where you can place the pin by hand.'
+          : 'This address only resolved approximately, and exact pins are required. ' +
+            'Book it in the Lalamove app, where you can place the pin by hand.',
     };
   }
 

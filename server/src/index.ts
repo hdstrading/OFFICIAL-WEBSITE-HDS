@@ -19,6 +19,16 @@ const app = express();
 // for knowing the request arrived over HTTPS (secure cookies).
 app.set('trust proxy', 1);
 
+/**
+ * The checkout map is third-party JavaScript, so it needs holes in the policy —
+ * and it only gets them when it is actually switched on. A site running without
+ * GOOGLE_MAPS_BROWSER_KEY keeps the tighter policy rather than carrying an
+ * exception for a feature nobody is using.
+ */
+const MAPS_ORIGINS = env.googleMapsBrowserKey
+  ? ['https://maps.googleapis.com', 'https://maps.gstatic.com']
+  : [];
+
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -27,9 +37,11 @@ app.use(
         // Tailwind injects styles at runtime, so inline styles must be allowed.
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", ...MAPS_ORIGINS],
         imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'", 'https://api.paymongo.com'],
+        // Maps runs its tile and geocoding calls from a blob worker.
+        workerSrc: env.googleMapsBrowserKey ? ["'self'", 'blob:'] : ["'self'"],
+        connectSrc: ["'self'", 'https://api.paymongo.com', ...MAPS_ORIGINS],
         // The hosted payment page and Messenger chat open in frames.
         frameSrc: ["'self'", 'https://checkout.paymongo.com', 'https://www.facebook.com'],
         formAction: ["'self'", 'https://checkout.paymongo.com'],

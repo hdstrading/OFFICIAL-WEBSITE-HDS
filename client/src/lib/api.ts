@@ -156,6 +156,7 @@ export const api = {
       freeDeliveryThreshold: number;
       depositPercent: number;
       paymentsLive: boolean;
+      mapsBrowserKey?: string;
       timeSlots: string[];
       counts: { products: number; services: number; reviews: number };
     }>('/site-info'),

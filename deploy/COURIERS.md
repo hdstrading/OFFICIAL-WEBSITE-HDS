@@ -79,8 +79,46 @@ So every result is graded:
 | `GEOMETRIC_CENTER`, `APPROXIMATE`, or any partial match | approximate | Distance estimate only — never sent to a courier |
 | nothing found | none | Falls back to the assumed 18 km |
 
-An approximate result still improves the in-house price, because that is our own
-van and our own risk. It never reaches Lalamove.
+By default an `approximate` result **is** used for couriers, and that is a
+judgement about Philippine addressing rather than about geocoding. A real
+example from this shop:
+
+```
+typed:     2 Ballecer Extn., South Signal Village, Taguig, Metro Manila, 1633
+Google:    Zone 6 Purok 12, Taguig, Metro Manila     (approximate)
+```
+
+That pin is inside the right subdivision — a few hundred metres from the door,
+not the centre of Taguig. The rider gets the full address text and the
+customer's phone number alongside it, which is how these deliveries actually
+complete. Refusing every address like that would leave the couriers unusable for
+most real orders.
+
+Set `COURIER_REQUIRE_EXACT_PIN=true` if you would rather book by hand than have
+a rider arrive at the end of the right street. An address that resolves to
+*nothing* is still always refused — there is no pin at all, only an assumption,
+and pricing a real delivery on a guess is how a rider ends up in another
+province.
+
+### Letting the customer place the pin
+
+A pin the customer drops themselves is exact by definition, which fixes the
+above at the source. The checkout address step offers two ways to do it:
+
+- **Use my location** — the browser's own geolocation. Needs no API key and
+  works today.
+- **Choose on map** — a draggable pin. This needs `GOOGLE_MAPS_BROWSER_KEY`.
+
+That is a **second, separate key**. The geocoding key is locked to this server's
+IP address, which a browser can never satisfy. In the same Google Cloud project:
+enable the **Maps JavaScript API**, create another key, restrict it to that API,
+and under Application restrictions choose *Websites* → `https://hdstradingopc.com/*`.
+
+Leave it blank and the map simply does not appear — and the site's
+Content-Security-Policy stays tighter, since Google's origins are only allowed
+when the key is set.
+
+Neither is ever required of the customer. Skipping both costs them nothing.
 
 ---
 

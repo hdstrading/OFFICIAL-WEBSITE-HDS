@@ -27,6 +27,7 @@ import {
   TextAreaField,
   TextField,
 } from '../components/ui';
+import LocationPicker from '../components/LocationPicker';
 
 const PAYMENT_ICONS: Record<PaymentMethod, typeof CreditCard> = {
   card: CreditCard,
@@ -66,6 +67,7 @@ export default function CheckoutPage() {
   const [quotingDelivery, setQuotingDelivery] = useState(false);
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
 
+  const [mapsKey, setMapsKey] = useState('');
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
 
@@ -89,6 +91,13 @@ export default function CheckoutPage() {
         setPaymentMethod(data.methods.find((m) => m.available)?.id ?? null);
       })
       .catch(() => setPaymentMethods([]));
+
+    // The map key is served at runtime rather than baked into the build, so
+    // adding or rotating it is an .env edit and a restart, not a rebuild.
+    api
+      .siteInfo()
+      .then((info) => setMapsKey(info.mapsBrowserKey ?? ''))
+      .catch(() => setMapsKey(''));
   }, []);
 
   /** Delivery prices depend on the address, so quote once it is complete enough. */
@@ -383,6 +392,26 @@ export default function CheckoutPage() {
                     placeholder="Optional — helps our driver find you"
                   />
                 </div>
+
+                <LocationPicker
+                  addressHint={[address.line1, address.barangay, address.city, address.province]
+                    .filter(Boolean)
+                    .join(', ')}
+                  value={
+                    address.lat !== undefined && address.lng !== undefined
+                      ? { lat: address.lat, lng: address.lng }
+                      : null
+                  }
+                  onChange={(pin) => {
+                    setAddress({ ...address, lat: pin?.lat, lng: pin?.lng });
+                    // The pin changes the distance, so any prices already on
+                    // screen are stale. Clearing them forces a re-quote rather
+                    // than letting somebody buy at the old figure.
+                    setDeliveryOptions([]);
+                    setSelectedDelivery(null);
+                  }}
+                  mapsKey={mapsKey}
+                />
 
                 <Button type="button" variant="secondary" onClick={fetchDeliveryOptions} loading={quotingDelivery}>
                   <Truck className="h-4 w-4" aria-hidden />
