@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { Router, json, raw } from 'express';
+import { Router, json, raw, type Request, type Response } from 'express';
 import { bookings, orders } from '../db.js';
 import { env } from '../env.js';
 import { bookingConfirmationEmail, orderConfirmationEmail } from '../lib/emails.js';
@@ -115,22 +115,55 @@ webhookRouter.post('/paymongo', raw({ type: '*/*', limit: '1mb' }), (req, res) =
  * retries, then eventually disables the webhook; an event we have no use for is
  * not an error, it is simply not interesting.
  */
-webhookRouter.post('/lalamove/:token', json({ limit: '256kb' }), (req, res) => {
+/**
+ * Checks the secret segment, answering the caller itself when it does not match.
+ *
+ * Returns true when the request may proceed. The distinction between the two
+ * failures is deliberate and is what makes a misconfiguration diagnosable from
+ * the outside: 503 means the server has no token set, 404 means the token in
+ * the URL is not the one configured.
+ */
+function lalamoveTokenOk(req: Request, res: Response): boolean {
   const expected = env.lalamove.webhookToken;
   if (!expected) {
-    console.warn('Lalamove webhook called but LALAMOVE_WEBHOOK_TOKEN is not set.');
+    console.warn(
+      `Lalamove webhook called at ${req.originalUrl} but LALAMOVE_WEBHOOK_TOKEN is not set. ` +
+        'Set it in .env and restart.',
+    );
     res.status(503).json({ error: 'Not configured.' });
-    return;
+    return false;
   }
   // Constant-time: comparing directly would leak the token a byte at a time.
   const provided = String(req.params.token ?? '');
   const a = crypto.createHash('sha256').update(provided).digest();
   const b = crypto.createHash('sha256').update(expected).digest();
   if (!crypto.timingSafeEqual(a, b)) {
-    console.warn('Rejected a Lalamove webhook with the wrong token.');
+    console.warn(
+      'Rejected a Lalamove webhook: the token in the URL does not match ' +
+        'LALAMOVE_WEBHOOK_TOKEN. Check the URL registered in the Partner Portal.',
+    );
     res.status(404).json({ error: 'Not found.' });
-    return;
+    return false;
   }
+  return true;
+}
+
+/**
+ * Answers the Partner Portal's reachability check.
+ *
+ * Lalamove verifies a webhook URL before it will save it, and reports anything
+ * other than a 200 as "Non-200 status code received" without saying what it
+ * sent. A POST-only endpoint fails that check while being perfectly capable of
+ * receiving events, so the same path answers a plain GET too. It reports
+ * nothing about any order — it exists to say "yes, something is listening here".
+ */
+webhookRouter.get('/lalamove/:token', (req, res) => {
+  if (!lalamoveTokenOk(req, res)) return;
+  res.json({ ok: true, endpoint: 'lalamove', listening: true });
+});
+
+webhookRouter.post('/lalamove/:token', json({ limit: '256kb' }), (req, res) => {
+  if (!lalamoveTokenOk(req, res)) return;
 
   res.json({ received: true });
 

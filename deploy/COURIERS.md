@@ -112,6 +112,26 @@ segment:
 https://hdstradingopc.com/api/webhooks/lalamove/<your-token>
 ```
 
+If the Partner Portal says **"Non-200 status code received"**, it has probed the
+URL and not got a 200. Run this on the website VPS to find out which of three
+things it is:
+
+```
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
+  https://hdstradingopc.com/api/webhooks/lalamove/YOUR_TOKEN \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+| Result | Cause |
+| --- | --- |
+| `503` | The route is deployed but `LALAMOVE_WEBHOOK_TOKEN` is not loaded — restart the service after editing `.env` |
+| `404` | Either the code is not deployed, or the token in the URL is not the one in `.env` |
+| `200` | The endpoint is fine; look for nginx or DNS between Lalamove and the server |
+
+The endpoint answers `GET` as well as `POST`, so a portal reachability check
+succeeds. The `GET` reports only that something is listening — never anything
+about an order.
+
 **The URL is the credential.** Lalamove's v3 webhooks are not signed the way the
 payment gateway's are, so there is no body signature to verify. Two things stand
 in for one:
