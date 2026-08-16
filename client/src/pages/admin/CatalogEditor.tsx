@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
-import { adminApi } from '../../lib/api';
-import { peso } from '../../lib/format';
-import { PRODUCT_CATEGORY_LABELS, SERVICE_CATEGORY_LABELS } from '../../types';
-import type { Product, ProductCategory, Service, ServiceCategory } from '../../types';
+import { useCallback, useEffect, useState } from "react";
+import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { adminApi } from "../../lib/api";
+import { peso } from "../../lib/format";
+import { PRODUCT_CATEGORY_LABELS, SERVICE_CATEGORY_LABELS } from "../../types";
+import type {
+  AdminRole,
+  Product,
+  ProductCategory,
+  Service,
+  ServiceCategory,
+} from "../../types";
 import {
   Alert,
   Button,
@@ -11,7 +17,7 @@ import {
   Spinner,
   TextAreaField,
   TextField,
-} from '../../components/ui';
+} from "../../components/ui";
 
 /**
  * Add, edit and remove what the website sells.
@@ -20,22 +26,22 @@ import {
  * as the form closes — there is no publish step and no rebuild.
  */
 
-type Mode = 'products' | 'services';
+type Mode = "products" | "services";
 
 /** Multi-line textarea in, string array out — one item per line. */
 const linesToArray = (text: string) =>
   text
-    .split('\n')
+    .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
 
-const arrayToLines = (items: string[]) => items.join('\n');
+const arrayToLines = (items: string[]) => items.join("\n");
 
 /** `Key: value` per line, for the product spec table. */
 const linesToSpecs = (text: string): Record<string, string> => {
   const out: Record<string, string> = {};
   for (const line of linesToArray(text)) {
-    const separator = line.indexOf(':');
+    const separator = line.indexOf(":");
     if (separator === -1) continue;
     const key = line.slice(0, separator).trim();
     const value = line.slice(separator + 1).trim();
@@ -47,33 +53,61 @@ const linesToSpecs = (text: string): Record<string, string> => {
 const specsToLines = (specs: Record<string, string>) =>
   Object.entries(specs)
     .map(([key, value]) => `${key}: ${value}`)
-    .join('\n');
+    .join("\n");
 
-export default function CatalogEditor({ onError }: { onError: (err: unknown) => void }) {
-  const [mode, setMode] = useState<Mode>('products');
+/**
+ * Products and services in one editor, but the two are owned by different
+ * roles: an inventory manager keeps the product catalogue, a website
+ * administrator keeps the services on offer. Each is shown only their half —
+ * and only asked for their half, because loading both would fail the whole
+ * screen on the 403 for the other.
+ */
+export default function CatalogEditor({
+  role,
+  onError,
+}: {
+  role: AdminRole;
+  onError: (err: unknown) => void;
+}) {
+  const canEditProducts =
+    role === "super_admin" || role === "inventory_manager";
+  const canEditServices = role === "super_admin" || role === "website_admin";
+  const [mode, setMode] = useState<Mode>(
+    canEditProducts ? "products" : "services",
+  );
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<Product | Service | 'new' | null>(null);
+  const [editing, setEditing] = useState<Product | Service | "new" | null>(
+    null,
+  );
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([adminApi.products(), adminApi.services()])
+    Promise.all([
+      canEditProducts ? adminApi.products() : Promise.resolve({ products: [] }),
+      canEditServices ? adminApi.services() : Promise.resolve({ services: [] }),
+    ])
       .then(([p, s]) => {
         setProducts(p.products);
         setServices(s.services);
       })
       .catch(onError)
       .finally(() => setLoading(false));
-  }, [onError]);
+  }, [onError, canEditProducts, canEditServices]);
 
   useEffect(load, [load]);
 
   async function remove(id: string) {
-    const label = mode === 'products' ? 'product' : 'service';
-    if (!confirm(`Delete this ${label}? Customers will no longer see it. This cannot be undone.`)) return;
+    const label = mode === "products" ? "product" : "service";
+    if (
+      !confirm(
+        `Delete this ${label}? Customers will no longer see it. This cannot be undone.`,
+      )
+    )
+      return;
     try {
-      if (mode === 'products') await adminApi.deleteProduct(id);
+      if (mode === "products") await adminApi.deleteProduct(id);
       else await adminApi.deleteService(id);
       load();
     } catch (err) {
@@ -83,33 +117,39 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
 
   if (loading) return <Spinner label="Loading catalog…" />;
 
-  const items = mode === 'products' ? products : services;
+  const items = mode === "products" ? products : services;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
-          {(['products', 'services'] as Mode[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => {
-                setMode(key);
-                setEditing(null);
-              }}
-              aria-pressed={mode === key}
-              className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors ${
-                mode === key ? 'bg-cyan-700 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {key} ({key === 'products' ? products.length : services.length})
-            </button>
-          ))}
+          {(["products", "services"] as Mode[])
+            .filter((key) =>
+              key === "products" ? canEditProducts : canEditServices,
+            )
+            .map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setMode(key);
+                  setEditing(null);
+                }}
+                aria-pressed={mode === key}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors ${
+                  mode === key
+                    ? "bg-cyan-700 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {key} ({key === "products" ? products.length : services.length})
+              </button>
+            ))}
         </div>
 
-        <Button onClick={() => setEditing('new')}>
+        <Button onClick={() => setEditing("new")}>
           <Plus className="h-4 w-4" aria-hidden />
-          Add {mode === 'products' ? 'product' : 'service'}
+          Add {mode === "products" ? "product" : "service"}
         </Button>
       </div>
 
@@ -117,7 +157,9 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
         <div className="rounded-2xl border-2 border-cyan-300 bg-white p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-extrabold text-slate-900">
-              {editing === 'new' ? `New ${mode === 'products' ? 'product' : 'service'}` : `Editing: ${editing.name}`}
+              {editing === "new"
+                ? `New ${mode === "products" ? "product" : "service"}`
+                : `Editing: ${editing.name}`}
             </h2>
             <button
               type="button"
@@ -129,9 +171,9 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
             </button>
           </div>
 
-          {mode === 'products' ? (
+          {mode === "products" ? (
             <ProductForm
-              initial={editing === 'new' ? null : (editing as Product)}
+              initial={editing === "new" ? null : (editing as Product)}
               onCancel={() => setEditing(null)}
               onSaved={() => {
                 setEditing(null);
@@ -141,7 +183,7 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
             />
           ) : (
             <ServiceForm
-              initial={editing === 'new' ? null : (editing as Service)}
+              initial={editing === "new" ? null : (editing as Service)}
               onCancel={() => setEditing(null)}
               onSaved={() => {
                 setEditing(null);
@@ -160,7 +202,7 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
       ) : (
         <ul className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
           {items.map((item) => {
-            const isProduct = 'price' in item;
+            const isProduct = "price" in item;
             return (
               <li key={item.id} className="flex items-center gap-4 px-5 py-3.5">
                 <img
@@ -181,17 +223,32 @@ export default function CatalogEditor({ onError }: { onError: (err: unknown) => 
                   <p className="text-xs text-slate-500">
                     {isProduct
                       ? PRODUCT_CATEGORY_LABELS[(item as Product).category]
-                      : SERVICE_CATEGORY_LABELS[(item as Service).category]}{' '}
-                    · {peso(isProduct ? (item as Product).price : (item as Service).basePrice)} per{' '}
-                    {item.unit}
+                      : SERVICE_CATEGORY_LABELS[
+                          (item as Service).category
+                        ]}{" "}
+                    ·{" "}
+                    {peso(
+                      isProduct
+                        ? (item as Product).price
+                        : (item as Service).basePrice,
+                    )}{" "}
+                    per {item.unit}
                   </p>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
-                  <Button size="sm" variant="secondary" onClick={() => setEditing(item)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setEditing(item)}
+                  >
                     <Pencil className="h-3.5 w-3.5" aria-hidden />
                     Edit
                   </Button>
-                  <Button size="sm" variant="danger" onClick={() => remove(item.id)}>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => remove(item.id)}
+                  >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
                   </Button>
                 </div>
@@ -217,18 +274,26 @@ function ProductForm({
   onSaved: () => void;
   onError: (err: unknown) => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [sku, setSku] = useState(initial?.sku ?? '');
-  const [category, setCategory] = useState<ProductCategory>(initial?.category ?? 'miscellaneous');
-  const [subcategory, setSubcategory] = useState(initial?.subcategory ?? '');
-  const [description, setDescription] = useState(initial?.description ?? '');
-  const [price, setPrice] = useState(String(initial?.price ?? ''));
-  const [unit, setUnit] = useState(initial?.unit ?? 'Unit');
-  const [image, setImage] = useState(initial?.image ?? '');
-  const [features, setFeatures] = useState(arrayToLines(initial?.features ?? []));
+  const [name, setName] = useState(initial?.name ?? "");
+  const [sku, setSku] = useState(initial?.sku ?? "");
+  const [category, setCategory] = useState<ProductCategory>(
+    initial?.category ?? "miscellaneous",
+  );
+  const [subcategory, setSubcategory] = useState(initial?.subcategory ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [price, setPrice] = useState(String(initial?.price ?? ""));
+  const [unit, setUnit] = useState(initial?.unit ?? "Unit");
+  const [image, setImage] = useState(initial?.image ?? "");
+  const [features, setFeatures] = useState(
+    arrayToLines(initial?.features ?? []),
+  );
   const [specs, setSpecs] = useState(specsToLines(initial?.specs ?? {}));
-  const [isBulkEligible, setIsBulkEligible] = useState(initial?.isBulkEligible ?? false);
-  const [minBulkQty, setMinBulkQty] = useState(String(initial?.minBulkQty ?? 1));
+  const [isBulkEligible, setIsBulkEligible] = useState(
+    initial?.isBulkEligible ?? false,
+  );
+  const [minBulkQty, setMinBulkQty] = useState(
+    String(initial?.minBulkQty ?? 1),
+  );
 
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -260,12 +325,16 @@ function ProductForm({
       else await adminApi.createProduct(payload);
       onSaved();
     } catch (err) {
-      const apiError = err as { message?: string; fields?: Record<string, string>; status?: number };
+      const apiError = err as {
+        message?: string;
+        fields?: Record<string, string>;
+        status?: number;
+      };
       if (apiError.status === 401) {
         onError(err);
         return;
       }
-      setError(apiError.message ?? 'Could not save.');
+      setError(apiError.message ?? "Could not save.");
       setFieldErrors(apiError.fields ?? {});
     } finally {
       setSaving(false);
@@ -392,7 +461,7 @@ function ProductForm({
 
       <div className="flex gap-2.5 pt-2">
         <Button type="submit" loading={saving}>
-          {initial ? 'Save changes' : 'Create product'}
+          {initial ? "Save changes" : "Create product"}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
@@ -415,17 +484,27 @@ function ServiceForm({
   onSaved: () => void;
   onError: (err: unknown) => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [category, setCategory] = useState<ServiceCategory>(initial?.category ?? 'general_sanitation');
-  const [tagline, setTagline] = useState(initial?.tagline ?? '');
-  const [description, setDescription] = useState(initial?.description ?? '');
-  const [basePrice, setBasePrice] = useState(String(initial?.basePrice ?? ''));
-  const [unit, setUnit] = useState(initial?.unit ?? 'Per visit');
-  const [image, setImage] = useState(initial?.image ?? '');
-  const [features, setFeatures] = useState(arrayToLines(initial?.features ?? []));
-  const [pros, setPros] = useState(arrayToLines(initial?.institutionalPros ?? []));
-  const [idealFor, setIdealFor] = useState(arrayToLines(initial?.idealFor ?? []));
-  const [frequencies, setFrequencies] = useState(arrayToLines(initial?.frequencyOptions ?? []));
+  const [name, setName] = useState(initial?.name ?? "");
+  const [category, setCategory] = useState<ServiceCategory>(
+    initial?.category ?? "general_sanitation",
+  );
+  const [tagline, setTagline] = useState(initial?.tagline ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [basePrice, setBasePrice] = useState(String(initial?.basePrice ?? ""));
+  const [unit, setUnit] = useState(initial?.unit ?? "Per visit");
+  const [image, setImage] = useState(initial?.image ?? "");
+  const [features, setFeatures] = useState(
+    arrayToLines(initial?.features ?? []),
+  );
+  const [pros, setPros] = useState(
+    arrayToLines(initial?.institutionalPros ?? []),
+  );
+  const [idealFor, setIdealFor] = useState(
+    arrayToLines(initial?.idealFor ?? []),
+  );
+  const [frequencies, setFrequencies] = useState(
+    arrayToLines(initial?.frequencyOptions ?? []),
+  );
 
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -456,12 +535,16 @@ function ServiceForm({
       else await adminApi.createService(payload);
       onSaved();
     } catch (err) {
-      const apiError = err as { message?: string; fields?: Record<string, string>; status?: number };
+      const apiError = err as {
+        message?: string;
+        fields?: Record<string, string>;
+        status?: number;
+      };
       if (apiError.status === 401) {
         onError(err);
         return;
       }
-      setError(apiError.message ?? 'Could not save.');
+      setError(apiError.message ?? "Could not save.");
       setFieldErrors(apiError.fields ?? {});
     } finally {
       setSaving(false);
@@ -572,7 +655,7 @@ function ServiceForm({
 
       <div className="flex gap-2.5 pt-2">
         <Button type="submit" loading={saving}>
-          {initial ? 'Save changes' : 'Create service'}
+          {initial ? "Save changes" : "Create service"}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

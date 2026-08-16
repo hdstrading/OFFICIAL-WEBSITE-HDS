@@ -1,43 +1,47 @@
-import { lazy, Suspense, useEffect } from 'react';
-import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import Navbar from './components/Navbar';
-import Footer from './components/Footer';
-import CartDrawer from './components/CartDrawer';
-import MessengerWidget from './components/MessengerWidget';
-import { CartProvider } from './lib/cart';
-import { CatalogProvider, useCatalog } from './lib/catalog';
-import { Spinner } from './components/ui';
-import { ADMIN_PATH } from './config/admin';
+import { lazy, Suspense, useEffect } from "react";
+import { Outlet, Route, Routes, useLocation } from "react-router-dom";
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
+import CartDrawer from "./components/CartDrawer";
+import MessengerWidget from "./components/MessengerWidget";
+import { CartProvider } from "./lib/cart";
+import { CatalogProvider, useCatalog } from "./lib/catalog";
+import { CompanyProvider } from "./lib/company";
+import { Spinner } from "./components/ui";
+import { ADMIN_PATH } from "./config/admin";
 
-import HomePage from './pages/HomePage';
-import ProductsPage from './pages/ProductsPage';
-import ProductDetailPage from './pages/ProductDetailPage';
-import ServicesPage from './pages/ServicesPage';
-import ServiceDetailPage from './pages/ServiceDetailPage';
-import BookPage from './pages/BookPage';
-import CheckoutPage from './pages/CheckoutPage';
-import QuotePage from './pages/QuotePage';
-import OrderStatusPage from './pages/OrderStatusPage';
-import BookingStatusPage from './pages/BookingStatusPage';
-import QuoteStatusPage from './pages/QuoteStatusPage';
-import TrackPage from './pages/TrackPage';
-import ReviewsPage from './pages/ReviewsPage';
-import AboutPage from './pages/AboutPage';
-import ContactPage from './pages/ContactPage';
-import NotFoundPage from './pages/NotFoundPage';
+import HomePage from "./pages/HomePage";
+import ProductsPage from "./pages/ProductsPage";
+import ProductDetailPage from "./pages/ProductDetailPage";
+import ServicesPage from "./pages/ServicesPage";
+import ServiceDetailPage from "./pages/ServiceDetailPage";
+import BookPage from "./pages/BookPage";
+import CheckoutPage from "./pages/CheckoutPage";
+import QuotePage from "./pages/QuotePage";
+import OrderStatusPage from "./pages/OrderStatusPage";
+import BookingStatusPage from "./pages/BookingStatusPage";
+import QuoteStatusPage from "./pages/QuoteStatusPage";
+import TrackPage from "./pages/TrackPage";
+import ReviewsPage from "./pages/ReviewsPage";
+import AboutPage from "./pages/AboutPage";
+import ContactPage from "./pages/ContactPage";
+import ResourcesPage from "./pages/ResourcesPage";
+import PostPage from "./pages/PostPage";
+import FaqPage from "./pages/FaqPage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 /**
  * The admin panel is a separate bundle so its code is never downloaded by a
  * normal visitor — the panel does not even exist in the JavaScript a customer
  * receives until they hit the secret path.
  */
-const AdminPage = lazy(() => import('./pages/admin/AdminPage'));
+const AdminPage = lazy(() => import("./pages/admin/AdminPage"));
 
 /** Restores scroll to the top on navigation, which a SPA does not do by default. */
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo({ top: 0, behavior: "instant" });
   }, [pathname]);
   return null;
 }
@@ -76,40 +80,48 @@ function WithCart() {
 
 export default function App() {
   return (
-    <CatalogProvider>
-      <ScrollToTop />
-      <Routes>
-        <Route element={<WithCart />}>
-          <Route element={<PublicLayout />}>
-            <Route index element={<HomePage />} />
-            <Route path="products" element={<ProductsPage />} />
-            <Route path="products/:id" element={<ProductDetailPage />} />
-            <Route path="services" element={<ServicesPage />} />
-            <Route path="services/:id" element={<ServiceDetailPage />} />
-            <Route path="book" element={<BookPage />} />
-            <Route path="checkout" element={<CheckoutPage />} />
-            <Route path="quote" element={<QuotePage />} />
-            <Route path="order/:reference" element={<OrderStatusPage />} />
-            <Route path="booking/:reference" element={<BookingStatusPage />} />
-            <Route path="quote/:reference" element={<QuoteStatusPage />} />
-            <Route path="track" element={<TrackPage />} />
-            <Route path="reviews" element={<ReviewsPage />} />
-            <Route path="about" element={<AboutPage />} />
-            <Route path="contact" element={<ContactPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
+    <CompanyProvider>
+      <CatalogProvider>
+        <ScrollToTop />
+        <Routes>
+          <Route element={<WithCart />}>
+            <Route element={<PublicLayout />}>
+              <Route index element={<HomePage />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="products/:id" element={<ProductDetailPage />} />
+              <Route path="services" element={<ServicesPage />} />
+              <Route path="services/:id" element={<ServiceDetailPage />} />
+              <Route path="book" element={<BookPage />} />
+              <Route path="checkout" element={<CheckoutPage />} />
+              <Route path="quote" element={<QuotePage />} />
+              <Route path="order/:reference" element={<OrderStatusPage />} />
+              <Route
+                path="booking/:reference"
+                element={<BookingStatusPage />}
+              />
+              <Route path="quote/:reference" element={<QuoteStatusPage />} />
+              <Route path="track" element={<TrackPage />} />
+              <Route path="reviews" element={<ReviewsPage />} />
+              <Route path="about" element={<AboutPage />} />
+              <Route path="contact" element={<ContactPage />} />
+              <Route path="resources" element={<ResourcesPage />} />
+              <Route path="resources/:slug" element={<PostPage />} />
+              <Route path="faq" element={<FaqPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
 
-          {/* Unlisted staff route — no link to it anywhere on the site. */}
-          <Route
-            path={ADMIN_PATH}
-            element={
-              <Suspense fallback={<Spinner label="Loading staff portal…" />}>
-                <AdminPage />
-              </Suspense>
-            }
-          />
-        </Route>
-      </Routes>
-    </CatalogProvider>
+            {/* Unlisted staff route — no link to it anywhere on the site. */}
+            <Route
+              path={ADMIN_PATH}
+              element={
+                <Suspense fallback={<Spinner label="Loading staff portal…" />}>
+                  <AdminPage />
+                </Suspense>
+              }
+            />
+          </Route>
+        </Routes>
+      </CatalogProvider>
+    </CompanyProvider>
   );
 }

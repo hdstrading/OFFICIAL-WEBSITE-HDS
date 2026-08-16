@@ -1,16 +1,21 @@
 import type {
+  AdminRole,
   AvailabilityResponse,
   Booking,
+  CompanyInfo,
   DeliveryAddress,
   DeliveryOption,
   DiscountCode,
   Order,
   PaymentMethod,
   PaymentMethodOption,
+  Post,
+  PostType,
   Product,
   QuoteRequest,
   Review,
   Service,
+  StaffUser,
 } from '../types';
 
 /** Result of a catalog sync, or of previewing one. */
@@ -153,6 +158,7 @@ export const api = {
   siteInfo: () =>
     request<{
       siteUrl: string;
+      company: CompanyInfo;
       freeDeliveryThreshold: number;
       depositPercent: number;
       paymentsLive: boolean;
@@ -266,14 +272,22 @@ export const api = {
     comment: string;
     reference?: string;
   }) => post<{ review: Review; message: string }>('/reviews', payload),
+
+  posts: (type?: PostType) =>
+    request<{ posts: Post[] }>(`/posts${type ? `?type=${encodeURIComponent(type)}` : ''}`),
+
+  post: (slug: string) => request<{ post: Post }>(`/posts/${encodeURIComponent(slug)}`),
 };
 
 /* --------------------------------------------------------------------- admin */
 
 export const adminApi = {
-  me: () => request<{ email: string }>('/admin/me'),
+  me: () => request<{ email: string; name: string; role: AdminRole }>('/admin/me'),
   login: (email: string, password: string) =>
-    post<{ email: string; expiresAt: number }>('/admin/login', { email, password }),
+    post<{ email: string; name: string; role: AdminRole; expiresAt: number }>('/admin/login', {
+      email,
+      password,
+    }),
   logout: () => post<{ ok: true }>('/admin/logout', {}),
 
   stats: () =>
@@ -369,4 +383,32 @@ export const adminApi = {
     }>('/admin/integrations'),
 
   exportUrl: (kind: 'orders' | 'quotes' | 'bookings') => `${BASE}/admin/export/${kind}.csv`,
+
+  /* ---------------------------------------------------------- staff accounts */
+
+  users: () => request<{ users: StaffUser[] }>('/admin/users'),
+  createUser: (data: { email: string; name: string; role: AdminRole; password: string }) =>
+    post<{ user: StaffUser }>('/admin/users', data),
+  updateUser: (id: string, data: { email: string; name: string; role: AdminRole; active?: boolean }) =>
+    patch<{ user: StaffUser }>(`/admin/users/${encodeURIComponent(id)}`, data),
+  setUserPassword: (id: string, password: string) =>
+    post<{ ok: true }>(`/admin/users/${encodeURIComponent(id)}/password`, { password }),
+  deleteUser: (id: string) => del<{ ok: true }>(`/admin/users/${encodeURIComponent(id)}`),
+  changeOwnPassword: (currentPassword: string, password: string) =>
+    post<{ ok: true }>('/admin/me/password', { currentPassword, password }),
+
+  /* ---------------------------------------------------------- company details */
+
+  companySettings: () => request<{ settings: Record<string, string> }>('/admin/settings/company'),
+  saveCompanySettings: (settings: Record<string, string>) =>
+    put<{ settings: Record<string, string> }>('/admin/settings/company', settings),
+
+  /* ----------------------------------------------------------------- content */
+
+  posts: (type?: PostType) =>
+    request<{ posts: Post[] }>(`/admin/posts${type ? `?type=${encodeURIComponent(type)}` : ''}`),
+  createPost: (data: unknown) => post<{ post: Post }>('/admin/posts', data),
+  updatePost: (id: string, data: unknown) =>
+    put<{ post: Post }>(`/admin/posts/${encodeURIComponent(id)}`, data),
+  deletePost: (id: string) => del<{ ok: true }>(`/admin/posts/${encodeURIComponent(id)}`),
 };

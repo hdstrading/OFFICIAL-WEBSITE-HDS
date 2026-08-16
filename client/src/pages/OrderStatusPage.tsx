@@ -10,7 +10,7 @@ import {
   peso,
 } from '../lib/format';
 import { Seo } from '../lib/seo';
-import { SITE } from '../config/site';
+import { usePrimaryHotline } from '../lib/company';
 import type { Order } from '../types';
 import { Alert, Badge, Button, Section, Spinner } from '../components/ui';
 
@@ -24,6 +24,7 @@ const TIMELINE: { key: Order['orderStatus']; label: string }[] = [
 ];
 
 export default function OrderStatusPage() {
+  const primaryHotline = usePrimaryHotline();
   const { reference = '' } = useParams();
   const [searchParams] = useSearchParams();
   const isNew = searchParams.get('new') === '1';
@@ -126,7 +127,7 @@ export default function OrderStatusPage() {
               <Alert tone="info" title="How to pay by bank transfer">
                 Our sales desk will email you our bank and e-wallet details within the hour. Send your
                 proof of payment quoting <strong>{order.reference}</strong>, and we release your order
-                straight away. Any questions — {SITE.hotlines[0].numbers[0]}.
+                straight away. Any questions — {primaryHotline}.
               </Alert>
             </div>
           )}
@@ -189,7 +190,7 @@ export default function OrderStatusPage() {
         ) : (
           <div className="mt-6">
             <Alert tone="error" title="This order was cancelled">
-              If this was not expected, please call {SITE.hotlines[0].numbers[0]} and quote{' '}
+              If this was not expected, please call {primaryHotline} and quote{' '}
               {order.reference}.
             </Alert>
           </div>

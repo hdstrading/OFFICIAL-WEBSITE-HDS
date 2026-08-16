@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "seed": "tsx src/seed.ts",
+    "admin:reset": "node dist/admin-reset.js",
     "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

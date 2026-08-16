@@ -4,7 +4,7 @@ import { FileText } from 'lucide-react';
 import { api } from '../lib/api';
 import { formatDateTime, peso } from '../lib/format';
 import { Seo } from '../lib/seo';
-import { SITE } from '../config/site';
+import { usePrimaryHotline } from '../lib/company';
 import type { QuoteRequest } from '../types';
 import { Alert, Badge, Button, Section, Spinner } from '../components/ui';
 
@@ -15,6 +15,7 @@ const URGENCY_LABELS: Record<string, string> = {
 };
 
 export default function QuoteStatusPage() {
+  const primaryHotline = usePrimaryHotline();
   const { reference = '' } = useParams();
   const [searchParams] = useSearchParams();
   const isNew = searchParams.get('new') === '1';
@@ -152,7 +153,7 @@ export default function QuoteStatusPage() {
           <Alert tone="info" title="These are list prices">
             Your formal quotation may come in lower. Our sales officer applies volume and contract
             pricing before sending the document you can submit for approval. Questions in the meantime
-            — call {SITE.hotlines[0].numbers[0]} and quote {quote.reference}.
+            — call {primaryHotline} and quote {quote.reference}.
           </Alert>
         </div>
 

@@ -9,7 +9,8 @@ import {
   Sparkles,
   Truck,
 } from 'lucide-react';
-import { SITE } from '../config/site';
+import { useCompany } from '../lib/company';
+import type { CompanyInfo } from '../types';
 import { useCatalog } from '../lib/catalog';
 import { Seo, organizationSchema } from '../lib/seo';
 import { ProductCard, ServiceCard } from '../components/CatalogCards';
@@ -40,16 +41,16 @@ const ENTRY_POINTS = [
   },
 ];
 
-const TRUST_POINTS = [
+const trustPoints = (company: CompanyInfo) => [
   {
     icon: ShieldCheck,
     title: 'Registered and compliant',
-    body: `${SITE.registration}. VAT-registered invoicing on every order and quotation.`,
+    body: `${company.registration}. VAT-registered invoicing on every order and quotation.`,
   },
   {
     icon: Truck,
     title: 'Delivery that fits your schedule',
-    body: 'Our own fleet, plus Lalamove for same-day runs. Free delivery on our fleet over ₱5,000.',
+    body: `Our own fleet, plus Lalamove for same-day runs. ${company.delivery.note}`,
   },
   {
     icon: CreditCard,
@@ -72,6 +73,8 @@ const HOW_IT_WORKS = [
 
 export default function HomePage() {
   const { products, services, loading, error } = useCatalog();
+  const company = useCompany();
+  const trust = trustPoints(company);
 
   const featuredProducts = products.slice(0, 4);
   const featuredServices = services.slice(0, 3);
@@ -79,10 +82,10 @@ export default function HomePage() {
   return (
     <>
       <Seo
-        title={`${SITE.legalName} — ${SITE.tagline}`}
-        description={SITE.description}
+        title={`${company.legalName} — ${company.tagline}`}
+        description={company.description}
         path="/"
-        structuredData={organizationSchema}
+        structuredData={organizationSchema(company)}
       />
 
       {/* Hero */}
@@ -263,7 +266,7 @@ export default function HomePage() {
         </h2>
 
         <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {TRUST_POINTS.map(({ icon: Icon, title, body }) => (
+          {trust.map(({ icon: Icon, title, body }) => (
             <div key={title}>
               <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-700">
                 <Icon className="h-5 w-5" aria-hidden />

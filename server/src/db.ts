@@ -178,6 +178,46 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  /* Staff who can sign in to the portal, and what each of them may do. */
+  CREATE TABLE IF NOT EXISTS admin_users (
+    id            TEXT PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name          TEXT NOT NULL DEFAULT '',
+    role          TEXT NOT NULL CHECK (role IN ('super_admin','inventory_manager','website_admin')),
+    /* scrypt: salt and derived key, never the password itself. */
+    password_hash TEXT NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    last_login_at TEXT
+  );
+
+  /* Company details the site displays, editable without touching code. */
+  CREATE TABLE IF NOT EXISTS site_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  /* Announcements, articles, videos and FAQs. */
+  CREATE TABLE IF NOT EXISTS posts (
+    id          TEXT PRIMARY KEY,
+    type        TEXT NOT NULL CHECK (type IN ('announcement','article','video','faq')),
+    slug        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    title       TEXT NOT NULL,
+    summary     TEXT NOT NULL DEFAULT '',
+    body        TEXT NOT NULL DEFAULT '',
+    /* Videos only: the page the video lives on. */
+    video_url   TEXT NOT NULL DEFAULT '',
+    image       TEXT NOT NULL DEFAULT '',
+    category    TEXT NOT NULL DEFAULT '',
+    author_name TEXT NOT NULL DEFAULT '',
+    published   INTEGER NOT NULL DEFAULT 0,
+    pinned      INTEGER NOT NULL DEFAULT 0,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     email      TEXT NOT NULL,
@@ -278,6 +318,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_bookings_created ON bookings (created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_bookings_date    ON bookings (preferred_date);
   CREATE INDEX IF NOT EXISTS idx_sessions_expiry  ON sessions (expires_at);
+  CREATE INDEX IF NOT EXISTS idx_posts_listing ON posts (type, published, pinned DESC, sort_order, created_at DESC);
 `);
 
 /* ------------------------------------------------------------------ mappers */
@@ -1055,6 +1096,254 @@ const toOrder = (r: OrderRow): Order => ({
   inventoryError: r.inventory_error,
   inventoryAttempts: r.inventory_attempts ?? 0,
 });
+
+/* --------------------------------------------------------------- staff users */
+
+export type AdminRole = 'super_admin' | 'inventory_manager' | 'website_admin';
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: AdminRole;
+  active: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+type AdminUserRow = {
+  id: string; email: string; name: string; role: string;
+  password_hash: string; active: number; created_at: string; last_login_at: string | null;
+};
+
+const toAdminUser = (r: AdminUserRow): AdminUser => ({
+  id: r.id,
+  email: r.email,
+  name: r.name,
+  role: r.role as AdminRole,
+  active: r.active !== 0,
+  createdAt: r.created_at,
+  lastLoginAt: r.last_login_at,
+});
+
+export const adminUsers = {
+  all(): AdminUser[] {
+    return (
+      db.prepare('SELECT * FROM admin_users ORDER BY role, email').all() as AdminUserRow[]
+    ).map(toAdminUser);
+  },
+  count(): number {
+    return (db.prepare('SELECT COUNT(*) AS n FROM admin_users').get() as { n: number }).n;
+  },
+  byId(id: string): AdminUser | null {
+    const row = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(id) as AdminUserRow | undefined;
+    return row ? toAdminUser(row) : null;
+  },
+  /** Includes the hash, so only the sign-in path should call this. */
+  credentialsFor(email: string): (AdminUser & { passwordHash: string }) | null {
+    const row = db
+      .prepare('SELECT * FROM admin_users WHERE email = ? COLLATE NOCASE')
+      .get(email.trim()) as AdminUserRow | undefined;
+    return row ? { ...toAdminUser(row), passwordHash: row.password_hash } : null;
+  },
+  create(user: Omit<AdminUser, 'createdAt' | 'lastLoginAt'> & { passwordHash: string }): AdminUser {
+    db.prepare(
+      `INSERT INTO admin_users (id, email, name, role, password_hash, active)
+       VALUES (@id, @email, @name, @role, @password_hash, @active)`,
+    ).run({
+      id: user.id,
+      email: user.email.trim().toLowerCase(),
+      name: user.name,
+      role: user.role,
+      password_hash: user.passwordHash,
+      active: user.active ? 1 : 0,
+    });
+    return this.byId(user.id)!;
+  },
+  update(id: string, changes: { name?: string; role?: AdminRole; active?: boolean }): AdminUser | null {
+    const existing = this.byId(id);
+    if (!existing) return null;
+    db.prepare('UPDATE admin_users SET name = ?, role = ?, active = ? WHERE id = ?').run(
+      changes.name ?? existing.name,
+      changes.role ?? existing.role,
+      (changes.active ?? existing.active) ? 1 : 0,
+      id,
+    );
+    return this.byId(id);
+  },
+  setPassword(id: string, passwordHash: string): boolean {
+    return db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(passwordHash, id).changes > 0;
+  },
+  markSignedIn(id: string) {
+    db.prepare("UPDATE admin_users SET last_login_at = datetime('now') WHERE id = ?").run(id);
+  },
+  remove(id: string): boolean {
+    return db.prepare('DELETE FROM admin_users WHERE id = ?').run(id).changes > 0;
+  },
+  /**
+   * How many super admins are left and able to sign in.
+   *
+   * Guards every path that could remove the last one — deleting, demoting or
+   * deactivating. An installation with no active super admin cannot manage its
+   * own users, and the only way back is a command on the server.
+   */
+  activeSuperAdmins(excludeId?: string): number {
+    return (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM admin_users
+            WHERE role = 'super_admin' AND active = 1 AND id != ?`,
+        )
+        .get(excludeId ?? '') as { n: number }
+    ).n;
+  },
+};
+
+/* --------------------------------------------------------------------- posts */
+
+export type PostType = 'announcement' | 'article' | 'video' | 'faq';
+
+export interface Post {
+  id: string;
+  type: PostType;
+  slug: string;
+  title: string;
+  summary: string;
+  body: string;
+  videoUrl: string;
+  image: string;
+  category: string;
+  authorName: string;
+  published: boolean;
+  pinned: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type PostRow = {
+  id: string; type: string; slug: string; title: string; summary: string; body: string;
+  video_url: string; image: string; category: string; author_name: string;
+  published: number; pinned: number; sort_order: number; created_at: string; updated_at: string;
+};
+
+const toPost = (r: PostRow): Post => ({
+  id: r.id,
+  type: r.type as PostType,
+  slug: r.slug,
+  title: r.title,
+  summary: r.summary,
+  body: r.body,
+  videoUrl: r.video_url,
+  image: r.image,
+  category: r.category,
+  authorName: r.author_name,
+  published: r.published !== 0,
+  pinned: r.pinned !== 0,
+  sortOrder: r.sort_order,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export const posts = {
+  /** Everything, for the staff portal. */
+  all(type?: PostType): Post[] {
+    const rows = type
+      ? db.prepare('SELECT * FROM posts WHERE type = ? ORDER BY pinned DESC, sort_order, created_at DESC').all(type)
+      : db.prepare('SELECT * FROM posts ORDER BY type, pinned DESC, sort_order, created_at DESC').all();
+    return (rows as PostRow[]).map(toPost);
+  },
+  /** Only what the public may see. Drafts stay invisible until somebody publishes them. */
+  published(type?: PostType): Post[] {
+    const rows = type
+      ? db
+          .prepare(
+            `SELECT * FROM posts WHERE published = 1 AND type = ?
+              ORDER BY pinned DESC, sort_order, created_at DESC`,
+          )
+          .all(type)
+      : db
+          .prepare(
+            `SELECT * FROM posts WHERE published = 1
+              ORDER BY pinned DESC, sort_order, created_at DESC`,
+          )
+          .all();
+    return (rows as PostRow[]).map(toPost);
+  },
+  byId(id: string): Post | null {
+    const row = db.prepare('SELECT * FROM posts WHERE id = ?').get(id) as PostRow | undefined;
+    return row ? toPost(row) : null;
+  },
+  bySlug(slug: string): Post | null {
+    const row = db.prepare('SELECT * FROM posts WHERE slug = ? COLLATE NOCASE').get(slug) as
+      | PostRow
+      | undefined;
+    return row ? toPost(row) : null;
+  },
+  upsert(post: Post): Post {
+    db.prepare(
+      `INSERT INTO posts (id, type, slug, title, summary, body, video_url, image, category,
+                          author_name, published, pinned, sort_order, created_at, updated_at)
+       VALUES (@id, @type, @slug, @title, @summary, @body, @video_url, @image, @category,
+               @author_name, @published, @pinned, @sort_order,
+               COALESCE((SELECT created_at FROM posts WHERE id = @id), datetime('now')),
+               datetime('now'))
+       ON CONFLICT(id) DO UPDATE SET
+         type = excluded.type, slug = excluded.slug, title = excluded.title,
+         summary = excluded.summary, body = excluded.body, video_url = excluded.video_url,
+         image = excluded.image, category = excluded.category, author_name = excluded.author_name,
+         published = excluded.published, pinned = excluded.pinned,
+         sort_order = excluded.sort_order, updated_at = excluded.updated_at`,
+    ).run({
+      id: post.id,
+      type: post.type,
+      slug: post.slug,
+      title: post.title,
+      summary: post.summary,
+      body: post.body,
+      video_url: post.videoUrl,
+      image: post.image,
+      category: post.category,
+      author_name: post.authorName,
+      published: post.published ? 1 : 0,
+      pinned: post.pinned ? 1 : 0,
+      sort_order: post.sortOrder,
+    });
+    return this.byId(post.id)!;
+  },
+  remove(id: string): boolean {
+    return db.prepare('DELETE FROM posts WHERE id = ?').run(id).changes > 0;
+  },
+  /** True when the slug is taken by a different post. Slugs are the public URL. */
+  slugTaken(slug: string, exceptId: string): boolean {
+    const row = db
+      .prepare('SELECT id FROM posts WHERE slug = ? COLLATE NOCASE AND id != ?')
+      .get(slug, exceptId);
+    return Boolean(row);
+  },
+};
+
+/* ------------------------------------------------------------- site settings */
+
+export const siteSettings = {
+  all(): Record<string, string> {
+    const rows = db.prepare('SELECT key, value FROM site_settings').all() as {
+      key: string;
+      value: string;
+    }[];
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  },
+  putMany(values: Record<string, string>) {
+    const write = db.prepare(
+      `INSERT INTO site_settings (key, value, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    );
+    db.transaction((entries: [string, string][]) => {
+      for (const [key, value] of entries) write.run(key, value);
+    })(Object.entries(values));
+  },
+};
 
 export const geocodes = {
   /**

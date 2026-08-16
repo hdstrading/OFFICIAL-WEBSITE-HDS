@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { LogOut, ShieldCheck } from 'lucide-react';
 import { adminApi, ApiError } from '../../lib/api';
+import { ROLE_LABELS, type AdminRole } from '../../types';
 import { Seo } from '../../lib/seo';
 import { SITE } from '../../config/site';
 import { Alert, Button, Spinner, TextField } from '../../components/ui';
@@ -18,7 +19,9 @@ import AdminDashboard from './AdminDashboard';
 export default function AdminPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [signedInAs, setSignedInAs] = useState<string | null>(null);
+  const [account, setAccount] = useState<{ email: string; name: string; role: AdminRole } | null>(
+    null,
+  );
   const [checking, setChecking] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,10 +29,9 @@ export default function AdminPage() {
   // An existing session survives a refresh, so check before showing the form.
   const checkSession = useCallback(async () => {
     try {
-      const me = await adminApi.me();
-      setSignedInAs(me.email);
+      setAccount(await adminApi.me());
     } catch {
-      setSignedInAs(null);
+      setAccount(null);
     } finally {
       setChecking(false);
     }
@@ -45,7 +47,7 @@ export default function AdminPage() {
     setError(null);
     try {
       const result = await adminApi.login(email, password);
-      setSignedInAs(result.email);
+      setAccount({ email: result.email, name: result.name, role: result.role });
       setPassword('');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Sign-in failed. Please try again.');
@@ -56,7 +58,7 @@ export default function AdminPage() {
 
   async function handleLogout() {
     await adminApi.logout().catch(() => undefined);
-    setSignedInAs(null);
+    setAccount(null);
   }
 
   if (checking) {
@@ -67,7 +69,7 @@ export default function AdminPage() {
     );
   }
 
-  if (!signedInAs) {
+  if (!account) {
     return (
       <>
         <Seo title="Staff sign-in" description="Staff access only." noindex />
@@ -145,7 +147,9 @@ export default function AdminPage() {
               </span>
               <div className="min-w-0">
                 <p className="font-extrabold tracking-tight truncate">Staff portal</p>
-                <p className="text-[11px] text-slate-400 truncate">{signedInAs}</p>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {account.name} · {ROLE_LABELS[account.role].name}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -163,7 +167,7 @@ export default function AdminPage() {
           </div>
         </header>
 
-        <AdminDashboard onSessionExpired={() => setSignedInAs(null)} />
+        <AdminDashboard role={account.role} onSessionExpired={() => setAccount(null)} />
       </div>
     </>
   );

@@ -68,13 +68,24 @@ interface FieldShellProps {
   error?: string;
   hint?: string;
   required?: boolean;
+  /**
+   * Hides the label visually but keeps it for screen readers. For controls whose
+   * purpose is already obvious from the row they sit in — never as a shortcut
+   * for a field that genuinely needs explaining.
+   */
+  hideLabel?: boolean;
   children: React.ReactNode;
 }
 
-function FieldShell({ label, htmlFor, error, hint, required, children }: FieldShellProps) {
+function FieldShell({ label, htmlFor, error, hint, required, hideLabel, children }: FieldShellProps) {
   return (
     <div>
-      <label htmlFor={htmlFor} className="block text-sm font-semibold text-slate-800 mb-1.5">
+      <label
+        htmlFor={htmlFor}
+        className={
+          hideLabel ? 'sr-only' : 'block text-sm font-semibold text-slate-800 mb-1.5'
+        }
+      >
         {label}
         {required && (
           <span className="text-red-600 ml-0.5" aria-label="required">
@@ -163,6 +174,7 @@ export interface SelectFieldProps extends React.SelectHTMLAttributes<HTMLSelectE
   label: string;
   error?: string;
   hint?: string;
+  hideLabel?: boolean;
 }
 
 export function SelectField({
@@ -171,13 +183,21 @@ export function SelectField({
   hint,
   id,
   required,
+  hideLabel,
   className = '',
   children,
   ...rest
 }: SelectFieldProps) {
   const fieldId = id ?? rest.name ?? label.replace(/\s+/g, '-').toLowerCase();
   return (
-    <FieldShell label={label} htmlFor={fieldId} error={error} hint={hint} required={required}>
+    <FieldShell
+      label={label}
+      htmlFor={fieldId}
+      error={error}
+      hint={hint}
+      required={required}
+      hideLabel={hideLabel}
+    >
       <select
         {...rest}
         id={fieldId}

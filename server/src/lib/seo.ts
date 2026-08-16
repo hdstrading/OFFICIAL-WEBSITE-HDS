@@ -1,5 +1,5 @@
 import { env } from '../env.js';
-import { products, services } from '../db.js';
+import { posts, products, services } from '../db.js';
 
 /**
  * robots.txt and sitemap.xml are generated rather than shipped as static files,
@@ -46,6 +46,8 @@ export function buildSitemapXml(): string {
     { path: '/services', changefreq: 'weekly', priority: '0.9' },
     { path: '/book', changefreq: 'daily', priority: '0.8' },
     { path: '/reviews', changefreq: 'weekly', priority: '0.6' },
+    { path: '/resources', changefreq: 'weekly', priority: '0.7' },
+    { path: '/faq', changefreq: 'monthly', priority: '0.6' },
     { path: '/about', changefreq: 'monthly', priority: '0.6' },
     { path: '/contact', changefreq: 'monthly', priority: '0.7' },
     { path: '/track', changefreq: 'monthly', priority: '0.4' },
@@ -64,9 +66,20 @@ export function buildSitemapXml(): string {
     })),
   ];
 
+  // Published announcements, articles and videos. FAQs live on one page rather
+  // than one each, so they are covered by /faq above.
+  const contentPages: SitemapEntry[] = posts
+    .published()
+    .filter((post) => post.type !== 'faq')
+    .map((post) => ({
+      path: `/resources/${post.slug}`,
+      changefreq: 'monthly' as const,
+      priority: '0.6',
+    }));
+
   const lastmod = new Date().toISOString().slice(0, 10);
 
-  const urls = [...staticPages, ...catalogPages]
+  const urls = [...staticPages, ...catalogPages, ...contentPages]
     .map(
       (entry) => `  <url>
     <loc>${escapeXml(`${env.siteUrl}${entry.path}`)}</loc>

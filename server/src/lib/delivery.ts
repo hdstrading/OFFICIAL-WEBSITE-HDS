@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { env, lalamoveConfigured } from '../env.js';
-import { FREE_DELIVERY_THRESHOLD, money } from './pricing.js';
+import { freeDeliveryThreshold, money } from './pricing.js';
 import { geocodeAddress, type GeocodePrecision } from './geocode.js';
 import type { DeliveryAddress, DeliveryOption } from '../types.js';
 
@@ -95,7 +95,8 @@ async function resolveDestination(address: DeliveryAddress): Promise<ResolvedDes
 /* ------------------------------------------------------------- in-house fleet */
 
 function inHouseOption(subtotal: number, km: number): DeliveryOption {
-  const free = subtotal >= FREE_DELIVERY_THRESHOLD;
+  const threshold = freeDeliveryThreshold();
+  const free = subtotal >= threshold;
 
   // ₱150 base covers the first 10 km, then ₱18/km.
   const computed = money(150 + Math.max(0, km - 10) * 18);
@@ -106,7 +107,7 @@ function inHouseOption(subtotal: number, km: number): DeliveryOption {
     serviceCode: 'HDS_FLEET',
     label: 'HDS Trading delivery',
     description: free
-      ? `Free — your order is over ${FREE_DELIVERY_THRESHOLD.toLocaleString('en-PH')} pesos.`
+      ? `Free — your order is over ${threshold.toLocaleString('en-PH')} pesos.`
       : 'Delivered by our own team, who can also carry stock to your storeroom.',
     fee,
     etaLabel: '1–2 business days',

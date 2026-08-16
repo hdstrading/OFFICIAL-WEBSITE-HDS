@@ -3,31 +3,50 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { env } from '../env.js';
 import {
+  adminUsers,
   blockedDates,
   bookings,
   discounts,
   orders,
+  posts,
   products,
   quotes,
   reviews,
   services,
+  siteSettings,
+  type AdminRole,
+  type Post,
 } from '../db.js';
-import { currentAdmin, endSession, requireAdmin, startSession, verifyCredentials } from '../auth.js';
+import {
+  currentAdmin,
+  endSession,
+  hashPassword,
+  requireAdmin,
+  requireRole,
+  startSession,
+  verifyCredentials,
+  type AuthedRequest,
+} from '../auth.js';
 import { bookLalamoveDelivery } from '../lib/delivery.js';
 import { ping as inventoryPing, InventoryError } from '../lib/inventory.js';
 import { attemptVoid, drainQueue, queueVoid, retryPush } from '../lib/inventory-queue.js';
 import { syncCatalog } from '../lib/inventory-catalog.js';
 import { inventoryConfigured } from '../env.js';
 import { newId } from '../lib/pricing.js';
+import { settingsWithDefaults } from '../lib/site-info.js';
 import {
+  adminUserSchema,
   blockDateSchema,
   bookingStatusSchema,
   discountSchema,
   fieldErrors,
   loginSchema,
+  passwordSchema,
+  postSchema,
   productSchema,
   quoteStatusSchema,
   serviceSchema,
+  siteSettingsSchema,
 } from '../validation.js';
 import type { Product, Service } from '../types.js';
 
@@ -49,13 +68,15 @@ adminRouter.post('/login', loginLimiter, (req, res) => {
     res.status(400).json({ error: 'Please enter your email and password.' });
     return;
   }
-  if (!verifyCredentials(parsed.data.email, parsed.data.password)) {
-    // Deliberately vague — do not reveal which half was wrong.
+  const user = verifyCredentials(parsed.data.email, parsed.data.password);
+  if (!user) {
+    // Deliberately vague — do not reveal which half was wrong, nor whether the
+    // account exists, is deactivated, or simply had the password mistyped.
     res.status(401).json({ error: 'Those credentials do not match our records.' });
     return;
   }
-  const expiresAt = startSession(res, parsed.data.email.trim().toLowerCase());
-  res.json({ email: parsed.data.email.trim().toLowerCase(), expiresAt });
+  const expiresAt = startSession(res, user);
+  res.json({ email: user.email, name: user.name, role: user.role, expiresAt });
 });
 
 adminRouter.post('/logout', (req, res) => {
@@ -65,16 +86,51 @@ adminRouter.post('/logout', (req, res) => {
 
 /** Lets the admin app decide whether to show the login screen on load. */
 adminRouter.get('/me', (req, res) => {
-  const email = currentAdmin(req);
-  if (!email) {
+  const admin = currentAdmin(req);
+  if (!admin) {
     res.status(401).json({ error: 'Not signed in.' });
     return;
   }
-  res.json({ email });
+  res.json({ email: admin.email, name: admin.name, role: admin.role });
 });
 
 // Everything below requires a valid session.
 adminRouter.use(requireAdmin);
+
+/**
+ * Who may reach what.
+ *
+ * Gated by path prefix rather than route by route, because there are forty-odd
+ * routes and the one somebody forgets to annotate is the one that leaks. A new
+ * endpoint under an existing prefix inherits the right rule automatically; a
+ * new prefix has to be added here, and until it is, only a super admin can use
+ * it — which fails closed rather than open.
+ *
+ * The split follows how the business actually divides:
+ *   - the shop and the warehouse: orders, stock, catalogue, pricing
+ *   - the website: what customers read, and what they say back
+ *   - the company itself: contact details, and who may sign in
+ */
+const RUNS_THE_SHOP = requireRole('super_admin', 'inventory_manager');
+const RUNS_THE_WEBSITE = requireRole('super_admin', 'website_admin');
+const OWNER_ONLY = requireRole('super_admin');
+
+adminRouter.use('/products', RUNS_THE_SHOP);
+adminRouter.use('/orders', RUNS_THE_SHOP);
+adminRouter.use('/quotes', RUNS_THE_SHOP);
+adminRouter.use('/discounts', RUNS_THE_SHOP);
+adminRouter.use('/inventory', RUNS_THE_SHOP);
+adminRouter.use('/export', RUNS_THE_SHOP);
+
+adminRouter.use('/services', RUNS_THE_WEBSITE);
+adminRouter.use('/bookings', RUNS_THE_WEBSITE);
+adminRouter.use('/blocked-dates', RUNS_THE_WEBSITE);
+adminRouter.use('/reviews', RUNS_THE_WEBSITE);
+adminRouter.use('/posts', RUNS_THE_WEBSITE);
+
+adminRouter.use('/settings', OWNER_ONLY);
+adminRouter.use('/users', OWNER_ONLY);
+adminRouter.use('/integrations', OWNER_ONLY);
 
 /* --------------------------------------------------------------- dashboard */
 
@@ -603,3 +659,251 @@ adminRouter.get('/integrations', (_req, res) => {
     },
   });
 });
+
+
+/* ------------------------------------------------------------- staff accounts */
+
+/**
+ * Staff accounts, and what each of them may do. Super admin only, because this
+ * is the one screen that can hand somebody else the keys.
+ */
+adminRouter.get('/users', (_req, res) => res.json({ users: adminUsers.all() }));
+
+adminRouter.post('/users', (req: AuthedRequest, res) => {
+  const parsed = adminUserSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
+    return;
+  }
+  const password = passwordSchema.safeParse(req.body.password);
+  if (!password.success) {
+    res.status(400).json({
+      error: 'Please check the highlighted fields.',
+      fields: { password: password.error.issues[0]?.message ?? 'Choose a longer password.' },
+    });
+    return;
+  }
+  if (adminUsers.credentialsFor(parsed.data.email)) {
+    res.status(409).json({
+      error: 'Somebody already signs in with that email address.',
+      fields: { email: 'Already in use.' },
+    });
+    return;
+  }
+
+  const user = adminUsers.create({
+    id: newId(),
+    email: parsed.data.email,
+    name: parsed.data.name,
+    role: parsed.data.role as AdminRole,
+    active: true,
+    passwordHash: hashPassword(password.data),
+  });
+  console.info(`${req.admin?.email} created staff account ${user.email} (${user.role}).`);
+  res.status(201).json({ user });
+});
+
+adminRouter.patch('/users/:id', (req: AuthedRequest, res) => {
+  const parsed = adminUserSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
+    return;
+  }
+  const target = adminUsers.byId(req.params.id);
+  if (!target) {
+    res.status(404).json({ error: 'That account no longer exists.' });
+    return;
+  }
+
+  const active = typeof req.body.active === 'boolean' ? req.body.active : target.active;
+  const role = (parsed.data.role as AdminRole) ?? target.role;
+
+  // An installation with no active super admin cannot manage its own accounts,
+  // and the only way back in is a command on the server. So the last one cannot
+  // demote or switch themselves off, however deliberately.
+  const wouldRemoveLastOwner =
+    target.role === 'super_admin' && (role !== 'super_admin' || !active);
+  if (wouldRemoveLastOwner && adminUsers.activeSuperAdmins(target.id) === 0) {
+    res.status(409).json({
+      error:
+        'This is the only super admin left. Promote somebody else first, or you will lock yourself out.',
+    });
+    return;
+  }
+
+  res.json({ user: adminUsers.update(req.params.id, { name: parsed.data.name, role, active }) });
+});
+
+/** Sets somebody's password. Also how a super admin helps a colleague who is locked out. */
+adminRouter.post('/users/:id/password', (req: AuthedRequest, res) => {
+  const password = passwordSchema.safeParse(req.body.password);
+  if (!password.success) {
+    res.status(400).json({
+      error: 'Please check the highlighted fields.',
+      fields: { password: password.error.issues[0]?.message ?? 'Choose a longer password.' },
+    });
+    return;
+  }
+  if (!adminUsers.byId(req.params.id)) {
+    res.status(404).json({ error: 'That account no longer exists.' });
+    return;
+  }
+  adminUsers.setPassword(req.params.id, hashPassword(password.data));
+  console.info(`${req.admin?.email} reset the password for account ${req.params.id}.`);
+  res.json({ ok: true });
+});
+
+adminRouter.delete('/users/:id', (req: AuthedRequest, res) => {
+  const target = adminUsers.byId(req.params.id);
+  if (!target) {
+    res.status(404).json({ error: 'That account no longer exists.' });
+    return;
+  }
+  if (target.id === req.admin?.id) {
+    res.status(409).json({ error: 'You cannot delete the account you are signed in with.' });
+    return;
+  }
+  if (target.role === 'super_admin' && adminUsers.activeSuperAdmins(target.id) === 0) {
+    res.status(409).json({ error: 'This is the only super admin left. Promote somebody else first.' });
+    return;
+  }
+  adminUsers.remove(target.id);
+  console.info(`${req.admin?.email} deleted staff account ${target.email}.`);
+  res.json({ ok: true });
+});
+
+/** Changing your own password needs the current one, whoever you are. */
+adminRouter.post('/me/password', (req: AuthedRequest, res) => {
+  const next = passwordSchema.safeParse(req.body.password);
+  if (!next.success) {
+    res.status(400).json({
+      error: 'Please check the highlighted fields.',
+      fields: { password: next.error.issues[0]?.message ?? 'Choose a longer password.' },
+    });
+    return;
+  }
+  // Proving the current password is what stops a borrowed session from locking
+  // the real owner out of their own account.
+  if (!req.admin || !verifyCredentials(req.admin.email, String(req.body.currentPassword ?? ''))) {
+    res.status(401).json({
+      error: 'That is not your current password.',
+      fields: { currentPassword: 'Incorrect.' },
+    });
+    return;
+  }
+  adminUsers.setPassword(req.admin.id, hashPassword(next.data));
+  res.json({ ok: true });
+});
+
+/* -------------------------------------------------------------- site settings */
+
+/** Company details the public site displays. Super admin only. */
+adminRouter.get('/settings/company', (_req, res) => {
+  res.json({ settings: settingsWithDefaults() });
+});
+
+adminRouter.put('/settings/company', (req: AuthedRequest, res) => {
+  const parsed = siteSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
+    return;
+  }
+  // Everything is stored as text, including the numeric threshold — one column,
+  // one type, and no surprises when it is read back.
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed.data)) {
+    if (value !== undefined) values[key] = String(value);
+  }
+  siteSettings.putMany(values);
+  console.info(`${req.admin?.email} updated the company details.`);
+  res.json({ settings: settingsWithDefaults() });
+});
+
+/* -------------------------------------------------------------------- content */
+
+adminRouter.get('/posts', (req, res) => {
+  const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+  res.json({ posts: posts.all(type as Post['type'] | undefined) });
+});
+
+adminRouter.post('/posts', (req: AuthedRequest, res) => {
+  const parsed = postSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
+    return;
+  }
+  const id = newId();
+  const slug = parsed.data.slug || slugify(parsed.data.title);
+  if (posts.slugTaken(slug, id)) {
+    res.status(409).json({
+      error: 'Another post already uses that web address.',
+      fields: { slug: 'Already in use.' },
+    });
+    return;
+  }
+  const post: Post = {
+    ...parsed.data,
+    id,
+    slug,
+    // Recorded so a reader knows who is speaking, and staff can see who wrote it.
+    authorName: parsed.data.authorName || req.admin?.name || '',
+    createdAt: '',
+    updatedAt: '',
+  } as Post;
+  res.status(201).json({ post: posts.upsert(post) });
+});
+
+adminRouter.put('/posts/:id', (req: AuthedRequest, res) => {
+  const parsed = postSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Please check the highlighted fields.', fields: fieldErrors(parsed.error) });
+    return;
+  }
+  const existing = posts.byId(req.params.id);
+  if (!existing) {
+    res.status(404).json({ error: 'That post no longer exists.' });
+    return;
+  }
+  const slug = parsed.data.slug || slugify(parsed.data.title);
+  if (posts.slugTaken(slug, req.params.id)) {
+    res.status(409).json({
+      error: 'Another post already uses that web address.',
+      fields: { slug: 'Already in use.' },
+    });
+    return;
+  }
+  res.json({
+    post: posts.upsert({
+      ...existing,
+      ...parsed.data,
+      id: req.params.id,
+      slug,
+      authorName: parsed.data.authorName || existing.authorName,
+    } as Post),
+  });
+});
+
+adminRouter.delete('/posts/:id', (req, res) => {
+  if (!posts.remove(req.params.id)) {
+    res.status(404).json({ error: 'That post no longer exists.' });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+/**
+ * Turns a title into a web address.
+ *
+ * Kept readable rather than random: the slug is what a customer sees and what
+ * search engines index, so /news/holiday-delivery-schedule beats /news/a7f3c2.
+ */
+function slugify(title: string): string {
+  const base = title
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 70);
+  // A title of only punctuation would otherwise produce an empty address.
+  return base || `post-${newId().slice(0, 8)}`;
+}

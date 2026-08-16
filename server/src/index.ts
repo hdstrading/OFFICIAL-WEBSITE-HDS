@@ -7,6 +7,7 @@ import path from 'node:path';
 import { env, isProduction } from './env.js';
 import { sessions } from './db.js';
 import { seedIfEmpty } from './seed.js';
+import { ensureFirstAdmin } from './auth.js';
 import { adminRouter } from './routes/admin.js';
 import { publicRouter } from './routes/public.js';
 import { webhookRouter } from './routes/webhooks.js';
@@ -42,8 +43,16 @@ app.use(
         // Maps runs its tile and geocoding calls from a blob worker.
         workerSrc: env.googleMapsBrowserKey ? ["'self'", 'blob:'] : ["'self'"],
         connectSrc: ["'self'", 'https://api.paymongo.com', ...MAPS_ORIGINS],
-        // The hosted payment page and Messenger chat open in frames.
-        frameSrc: ["'self'", 'https://checkout.paymongo.com', 'https://www.facebook.com'],
+        // The hosted payment page and Messenger chat open in frames, and so do
+        // the videos staff post — YouTube and Vimeo only, so a pasted link
+        // cannot frame something arbitrary into our pages.
+        frameSrc: [
+          "'self'",
+          'https://checkout.paymongo.com',
+          'https://www.facebook.com',
+          'https://www.youtube-nocookie.com',
+          'https://player.vimeo.com',
+        ],
         formAction: ["'self'", 'https://checkout.paymongo.com'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
@@ -184,6 +193,11 @@ process.on('uncaughtException', (error) => {
 /* -------------------------------------------------------------------- start */
 
 seedIfEmpty();
+
+// Guarantees somebody can always sign in — on a fresh install, and on the first
+// boot after per-user accounts landed, when the environment's ADMIN_EMAIL and
+// ADMIN_PASSWORD become the first super admin.
+ensureFirstAdmin();
 
 // Delivers paid orders to the inventory system, retrying anything that did not
 // get through while it was unreachable.

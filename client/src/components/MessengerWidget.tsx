@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MessageCircle, Phone, X } from 'lucide-react';
-import { SITE, telHref } from '../config/site';
+import { telHref } from '../config/site';
+import { useCompany, usePrimaryHotline } from '../lib/company';
 
 /**
  * Floating contact launcher. Deliberately a plain link to Messenger rather than
@@ -8,6 +9,8 @@ import { SITE, telHref } from '../config/site';
  * it works with our content security policy.
  */
 export default function MessengerWidget() {
+  const company = useCompany();
+  const primaryHotline = usePrimaryHotline();
   const [open, setOpen] = useState(false);
 
   return (
@@ -16,11 +19,11 @@ export default function MessengerWidget() {
         <div className="w-72 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
           <div className="bg-cyan-700 px-4 py-3">
             <p className="text-sm font-bold text-white">Need help choosing?</p>
-            <p className="text-xs text-cyan-100 mt-0.5">{SITE.hours.label}</p>
+            <p className="text-xs text-cyan-100 mt-0.5">{company.hours.label}</p>
           </div>
           <div className="p-3 space-y-2">
             <a
-              href={SITE.social.messenger}
+              href={company.social.messenger}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 hover:border-cyan-300 hover:bg-cyan-50/50 transition-colors"
@@ -32,19 +35,19 @@ export default function MessengerWidget() {
               </span>
             </a>
             <a
-              href={telHref(SITE.hotlines[0].numbers[0])}
+              href={telHref(primaryHotline)}
               className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 hover:border-cyan-300 hover:bg-cyan-50/50 transition-colors"
             >
               <Phone className="h-5 w-5 text-cyan-700 shrink-0" aria-hidden />
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-slate-900">
-                  {SITE.hotlines[0].numbers[0]}
+                  {primaryHotline}
                 </span>
                 <span className="block text-xs text-slate-500">Taytay sales desk</span>
               </span>
             </a>
             <a
-              href={`mailto:${SITE.email.primary}`}
+              href={`mailto:${company.email.primary}`}
               className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 hover:border-cyan-300 hover:bg-cyan-50/50 transition-colors"
             >
               <span aria-hidden className="text-lg leading-none">
@@ -52,7 +55,7 @@ export default function MessengerWidget() {
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-slate-900">Email us</span>
-                <span className="block text-xs text-slate-500 truncate">{SITE.email.primary}</span>
+                <span className="block text-xs text-slate-500 truncate">{company.email.primary}</span>
               </span>
             </a>
           </div>

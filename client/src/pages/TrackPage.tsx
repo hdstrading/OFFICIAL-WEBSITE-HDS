@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { Seo, breadcrumbSchema } from '../lib/seo';
-import { SITE } from '../config/site';
+import { useCompany, usePrimaryHotline } from '../lib/company';
 import { Alert, Button, PageHeader, Section } from '../components/ui';
 
 /**
@@ -11,6 +11,8 @@ import { Alert, Button, PageHeader, Section } from '../components/ui';
  * booking and a quotation.
  */
 export default function TrackPage() {
+  const company = useCompany();
+  const primaryHotline = usePrimaryHotline();
   const navigate = useNavigate();
   const [reference, setReference] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -90,9 +92,9 @@ export default function TrackPage() {
 
         <div className="mt-6">
           <Alert tone="info" title="Lost your reference?">
-            Call {SITE.hotlines[0].numbers[0]} during {SITE.hours.label}, or email{' '}
-            <a href={`mailto:${SITE.email.primary}`} className="underline font-semibold">
-              {SITE.email.primary}
+            Call {primaryHotline} during {company.hours.label}, or email{' '}
+            <a href={`mailto:${company.email.primary}`} className="underline font-semibold">
+              {company.email.primary}
             </a>{' '}
             with the name and date of your order — we will find it for you.
           </Alert>

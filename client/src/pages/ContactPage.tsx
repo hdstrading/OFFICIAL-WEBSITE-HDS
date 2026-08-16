@@ -10,7 +10,8 @@ import {
   MessageCircle,
   Phone,
 } from 'lucide-react';
-import { SITE, telHref } from '../config/site';
+import { telHref } from '../config/site';
+import { useCompany } from '../lib/company';
 import { Seo, breadcrumbSchema, organizationSchema } from '../lib/seo';
 import { Button, PageHeader, Section } from '../components/ui';
 
@@ -37,14 +38,15 @@ const QUICK_ACTIONS = [
 ];
 
 export default function ContactPage() {
+  const company = useCompany();
   return (
     <>
       <Seo
         title="Contact HDS Trading OPC"
-        description={`Reach HDS Trading OPC in Taytay, Taguig and Tacloban. Call our hotlines, email our sales desks, or chat on Messenger. ${SITE.hours.label}.`}
+        description={`Reach HDS Trading OPC in Taytay, Taguig and Tacloban. Call our hotlines, email our sales desks, or chat on Messenger. ${company.hours.label}.`}
         path="/contact"
         structuredData={[
-          organizationSchema,
+          organizationSchema(company),
           breadcrumbSchema([
             { name: 'Home', path: '/' },
             { name: 'Contact', path: '/contact' },
@@ -55,7 +57,7 @@ export default function ContactPage() {
       <PageHeader
         eyebrow="Contact"
         title="Talk to us"
-        description={`Our sales desks answer during ${SITE.hours.label}. For anything urgent outside those hours, contract clients can reach our emergency dispatch line.`}
+        description={`Our sales desks answer during ${company.hours.label}. For anything urgent outside those hours, contract clients can reach our emergency dispatch line.`}
       />
 
       <Section className="py-12">
@@ -82,11 +84,11 @@ export default function ContactPage() {
               Branch hotlines
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Tap any number to call. All lines are answered {SITE.hours.label}.
+              Tap any number to call. All lines are answered {company.hours.label}.
             </p>
 
             <div className="mt-5 space-y-4">
-              {SITE.hotlines.map((branch) => (
+              {company.hotlines.map((branch) => (
                 <div key={branch.branch} className="rounded-2xl border border-slate-200 bg-white p-5">
                   <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider">
                     {branch.branch}
@@ -112,11 +114,11 @@ export default function ContactPage() {
             <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5">
               <h3 className="text-sm font-extrabold text-red-900 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" aria-hidden />
-                {SITE.emergency.label}
+                {company.emergency.label}
               </h3>
-              <p className="mt-2 text-sm text-red-800 leading-relaxed">{SITE.emergency.note}</p>
+              <p className="mt-2 text-sm text-red-800 leading-relaxed">{company.emergency.note}</p>
               <ul className="mt-3 flex flex-wrap gap-2">
-                {SITE.emergency.numbers.map((number) => (
+                {company.emergency.numbers.map((number) => (
                   <li key={number}>
                     <a
                       href={telHref(number)}
@@ -144,7 +146,7 @@ export default function ContactPage() {
                   Sales &amp; procurement
                 </h3>
                 <ul className="mt-2 space-y-1.5">
-                  {SITE.email.sales.map((address) => (
+                  {company.email.sales.map((address) => (
                     <li key={address}>
                       <a
                         href={`mailto:${address}`}
@@ -162,7 +164,7 @@ export default function ContactPage() {
                   Corporate enquiries
                 </h3>
                 <ul className="mt-2 space-y-1.5">
-                  {SITE.email.corporate.map((address) => (
+                  {company.email.corporate.map((address) => (
                     <li key={address}>
                       <a
                         href={`mailto:${address}`}
@@ -190,13 +192,13 @@ export default function ContactPage() {
                 or delivery timing.
               </p>
               <div className="mt-4 flex flex-wrap gap-2.5">
-                <a href={SITE.social.messenger} target="_blank" rel="noreferrer">
+                <a href={company.social.messenger} target="_blank" rel="noreferrer">
                   <Button>
                     <MessageCircle className="h-4 w-4" aria-hidden />
                     Open Messenger
                   </Button>
                 </a>
-                <a href={SITE.social.facebook} target="_blank" rel="noreferrer">
+                <a href={company.social.facebook} target="_blank" rel="noreferrer">
                   <Button variant="secondary">
                     <Facebook className="h-4 w-4" aria-hidden />
                     Our Facebook page
@@ -211,12 +213,12 @@ export default function ContactPage() {
                 Registered office
               </h2>
               <address className="mt-2.5 not-italic text-sm text-slate-600 leading-relaxed">
-                <strong className="block text-slate-900">{SITE.legalName}</strong>
-                {SITE.office.full}
+                <strong className="block text-slate-900">{company.legalName}</strong>
+                {company.office.full}
               </address>
               <p className="mt-3 flex items-center gap-2 text-sm text-slate-600">
                 <Clock className="h-4 w-4 text-cyan-700 shrink-0" aria-hidden />
-                {SITE.hours.label}
+                {company.hours.label}
               </p>
               <p className="mt-3 text-xs text-slate-500 leading-relaxed">
                 Warehouse pickup is available by arrangement — place your order online, choose

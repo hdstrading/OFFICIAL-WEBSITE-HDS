@@ -4,11 +4,12 @@ import { CalendarCheck, Clock, MapPin, Wallet } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { formatDate, formatDateTime, peso } from '../lib/format';
 import { Seo } from '../lib/seo';
-import { SITE } from '../config/site';
+import { usePrimaryHotline } from '../lib/company';
 import type { Booking } from '../types';
 import { Alert, Badge, Button, Section, Spinner } from '../components/ui';
 
 export default function BookingStatusPage() {
+  const primaryHotline = usePrimaryHotline();
   const { reference = '' } = useParams();
   const [searchParams] = useSearchParams();
   const isNew = searchParams.get('new') === '1';
@@ -209,7 +210,7 @@ export default function BookingStatusPage() {
                   Pay {peso(booking.depositAmount)} now
                 </Button>
                 <p className="mt-2 text-[11px] text-center text-slate-500">
-                  Card, GCash, Maya or online bank transfer. Or call {SITE.hotlines[0].numbers[0]} to
+                  Card, GCash, Maya or online bank transfer. Or call {primaryHotline} to
                   arrange a deposit over the counter.
                 </p>
               </>

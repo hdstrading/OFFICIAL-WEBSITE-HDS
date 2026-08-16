@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Minus, Plus, ShoppingBag, Trash2, Truck, X } from 'lucide-react';
 import { useCart } from '../lib/cart';
 import { peso } from '../lib/format';
-import { SITE } from '../config/site';
+import { useCompany } from '../lib/company';
 import { Button, EmptyState } from './ui';
 
 /**
@@ -12,6 +12,7 @@ import { Button, EmptyState } from './ui';
  * rather than showing a number that will change.
  */
 export default function CartDrawer() {
+  const company = useCompany();
   const { items, isOpen, close, setQuantity, remove, subtotal, count } = useCart();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -34,7 +35,7 @@ export default function CartDrawer() {
 
   if (!isOpen) return null;
 
-  const shortfall = SITE.delivery.freeThreshold - subtotal;
+  const shortfall = company.delivery.freeThreshold - subtotal;
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Shopping cart">

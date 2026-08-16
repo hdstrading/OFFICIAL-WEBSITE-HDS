@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { SITE, absoluteUrl } from '../config/site';
+import type { CompanyInfo } from '../types';
 
 /**
  * Per-page SEO. React 19 hoists <title> and <meta> rendered anywhere in the
@@ -89,34 +90,43 @@ export function Seo({ title, description, path, image, noindex, structuredData }
   return null;
 }
 
-/** Organisation and local-business markup, rendered once on the home page. */
-export const organizationSchema = {
-  '@context': 'https://schema.org',
-  '@type': 'LocalBusiness',
-  '@id': `${SITE.url}/#organization`,
-  name: SITE.legalName,
-  alternateName: SITE.shortName,
-  url: SITE.url,
-  description: SITE.description,
-  email: SITE.email.primary,
-  telephone: SITE.hotlines[0].numbers[0],
-  priceRange: '₱₱',
-  currenciesAccepted: 'PHP',
-  paymentAccepted: 'Credit Card, Debit Card, GCash, Maya, Bank Transfer, Cash',
-  openingHours: SITE.hours.schema,
-  address: {
-    '@type': 'PostalAddress',
-    addressLocality: SITE.office.street,
-    addressRegion: SITE.office.region,
-    addressCountry: SITE.office.countryCode,
-  },
-  areaServed: [
-    { '@type': 'AdministrativeArea', name: 'Metro Manila' },
-    { '@type': 'AdministrativeArea', name: 'Rizal' },
-    { '@type': 'Country', name: 'Philippines' },
-  ],
-  sameAs: [SITE.social.facebook],
-};
+/**
+ * Organisation and local-business markup, rendered on the home and contact pages.
+ *
+ * Takes the company details rather than reading the build-time constants, so the
+ * telephone number and opening hours Google is shown are the ones the owner last
+ * saved — structured data that disagrees with the visible page is worse than
+ * none at all.
+ */
+export function organizationSchema(company: CompanyInfo) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    '@id': `${SITE.url}/#organization`,
+    name: company.legalName,
+    alternateName: company.shortName,
+    url: SITE.url,
+    description: company.description,
+    email: company.email.primary,
+    telephone: company.hotlines[0]?.numbers[0] ?? '',
+    priceRange: '₱₱',
+    currenciesAccepted: 'PHP',
+    paymentAccepted: 'Credit Card, Debit Card, GCash, Maya, Bank Transfer, Cash',
+    openingHours: company.hours.schema,
+    address: {
+      '@type': 'PostalAddress',
+      addressLocality: company.office.street,
+      addressRegion: company.office.region,
+      addressCountry: SITE.office.countryCode,
+    },
+    areaServed: [
+      { '@type': 'AdministrativeArea', name: 'Metro Manila' },
+      { '@type': 'AdministrativeArea', name: 'Rizal' },
+      { '@type': 'Country', name: 'Philippines' },
+    ],
+    sameAs: [company.social.facebook],
+  };
+}
 
 /** Breadcrumb markup, so search results show the page's place in the site. */
 export function breadcrumbSchema(trail: { name: string; path: string }[]) {

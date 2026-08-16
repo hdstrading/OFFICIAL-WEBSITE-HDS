@@ -303,3 +303,79 @@ export interface ApiFieldError {
   error: string;
   fields?: Record<string, string>;
 }
+
+/* ------------------------------------------------------------- staff accounts */
+
+export type AdminRole = 'super_admin' | 'inventory_manager' | 'website_admin';
+
+export interface StaffUser {
+  id: string;
+  email: string;
+  name: string;
+  role: AdminRole;
+  active: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+/** What each role may reach, in the words staff use for it. */
+export const ROLE_LABELS: Record<AdminRole, { name: string; scope: string }> = {
+  super_admin: {
+    name: 'Super admin',
+    scope: 'Everything, including staff accounts and company details.',
+  },
+  inventory_manager: {
+    name: 'Inventory manager',
+    scope: 'Products, orders, quotations, discounts and the inventory link.',
+  },
+  website_admin: {
+    name: 'Website administrator',
+    scope: 'Services, bookings, the calendar, reviews and published content.',
+  },
+};
+
+/* ------------------------------------------------------------ company details */
+
+export interface CompanyInfo {
+  legalName: string;
+  shortName: string;
+  tagline: string;
+  description: string;
+  registration: string;
+  office: { street: string; region: string; country: string; full: string };
+  hours: { label: string; schema: string };
+  email: { primary: string; sales: string[]; corporate: string[] };
+  social: { facebook: string; messenger: string };
+  hotlines: { branch: string; numbers: string[] }[];
+  emergency: { label: string; note: string; numbers: string[] };
+  delivery: { freeThreshold: number; note: string };
+}
+
+/* -------------------------------------------------------------------- content */
+
+export type PostType = 'announcement' | 'article' | 'video' | 'faq';
+
+export interface Post {
+  id: string;
+  type: PostType;
+  slug: string;
+  title: string;
+  summary: string;
+  body: string;
+  videoUrl: string;
+  image: string;
+  category: string;
+  authorName: string;
+  published: boolean;
+  pinned: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const POST_TYPE_LABELS: Record<PostType, { singular: string; plural: string }> = {
+  announcement: { singular: 'Announcement', plural: 'Announcements' },
+  article: { singular: 'Article', plural: 'Articles & guides' },
+  video: { singular: 'Video', plural: 'Videos' },
+  faq: { singular: 'FAQ', plural: 'Frequently asked questions' },
+};

@@ -1,13 +1,20 @@
 import crypto from 'node:crypto';
 import { discounts, products } from '../db.js';
 import { env } from '../env.js';
+import { buildSiteInfo } from './site-info.js';
 import type { DiscountCode, OrderItem, PaymentMethod } from '../types.js';
 
 /** Standard Philippine VAT. Prices in the catalog are VAT-exclusive. */
 export const VAT_RATE = 0.12;
 
-/** Orders at or above this subtotal ship free on our own trucks. */
-export const FREE_DELIVERY_THRESHOLD = 5000;
+/**
+ * Orders at or above this subtotal ship free on our own trucks.
+ *
+ * Read fresh each time rather than captured at start-up: the super admin can
+ * change it from the portal, and a change that only takes effect after a
+ * restart is the kind of thing that gets forgotten and then surprises somebody.
+ */
+export const freeDeliveryThreshold = () => buildSiteInfo().delivery.freeThreshold;
 
 /** Round to centavos so totals never drift by floating-point dust. */
 export const money = (value: number) => Math.round(value * 100) / 100;

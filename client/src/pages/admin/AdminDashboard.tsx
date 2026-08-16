@@ -1,21 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Building2,
   CalendarX2,
   Download,
+  KeyRound,
   MessageSquare,
+  Newspaper,
   Package,
   ShoppingCart,
   Sparkles,
   Tag,
+  Users,
   Warehouse,
   Wrench,
 } from 'lucide-react';
 import { adminApi, ApiError } from '../../lib/api';
 import { formatDate, formatDateTime, peso, PAYMENT_STATUS_LABELS, ORDER_STATUS_LABELS } from '../../lib/format';
-import type { Booking, DiscountCode, Order, QuoteRequest, Review } from '../../types';
+import type { AdminRole, Booking, DiscountCode, Order, QuoteRequest, Review } from '../../types';
 import { Alert, Badge, Button, Section, SelectField, Spinner, StarRating, TextField } from '../../components/ui';
 import CatalogEditor from './CatalogEditor';
 import InventoryLink from './InventoryLink';
+import ContentEditor from './ContentEditor';
+import CompanyDetails from './CompanyDetails';
+import StaffAccounts from './StaffAccounts';
 
 type Tab =
   | 'overview'
@@ -26,21 +33,51 @@ type Tab =
   | 'catalog'
   | 'reviews'
   | 'calendar'
-  | 'promos';
+  | 'promos'
+  | 'content'
+  | 'company'
+  | 'staff'
+  | 'account';
 
-const TABS: { key: Tab; label: string; icon: typeof Package }[] = [
-  { key: 'overview', label: 'Overview', icon: Sparkles },
-  { key: 'orders', label: 'Orders', icon: ShoppingCart },
-  { key: 'inventory', label: 'Warehouse', icon: Warehouse },
-  { key: 'bookings', label: 'Bookings', icon: CalendarX2 },
-  { key: 'quotes', label: 'Quotations', icon: Package },
-  { key: 'catalog', label: 'Catalog', icon: Wrench },
-  { key: 'reviews', label: 'Reviews', icon: MessageSquare },
-  { key: 'calendar', label: 'Block dates', icon: CalendarX2 },
-  { key: 'promos', label: 'Discounts', icon: Tag },
+const EVERYONE: AdminRole[] = ['super_admin', 'inventory_manager', 'website_admin'];
+/** The people who move stock and money. */
+const RUNS_THE_SHOP: AdminRole[] = ['super_admin', 'inventory_manager'];
+/** The people who look after what the public sees. */
+const RUNS_THE_WEBSITE: AdminRole[] = ['super_admin', 'website_admin'];
+const OWNER_ONLY: AdminRole[] = ['super_admin'];
+
+/**
+ * Which tabs each role sees.
+ *
+ * This mirrors the roles enforced on the server, and only mirrors them. Hiding a
+ * tab is a courtesy so nobody wastes time clicking into a screen they will be
+ * refused — the refusal itself happens in the API, where it cannot be bypassed
+ * by editing the page.
+ */
+const TABS: { key: Tab; label: string; icon: typeof Package; roles: AdminRole[] }[] = [
+  { key: 'overview', label: 'Overview', icon: Sparkles, roles: EVERYONE },
+  { key: 'orders', label: 'Orders', icon: ShoppingCart, roles: RUNS_THE_SHOP },
+  { key: 'inventory', label: 'Warehouse', icon: Warehouse, roles: RUNS_THE_SHOP },
+  { key: 'bookings', label: 'Bookings', icon: CalendarX2, roles: RUNS_THE_WEBSITE },
+  { key: 'quotes', label: 'Quotations', icon: Package, roles: RUNS_THE_SHOP },
+  { key: 'catalog', label: 'Catalog', icon: Wrench, roles: EVERYONE },
+  { key: 'content', label: 'Content', icon: Newspaper, roles: RUNS_THE_WEBSITE },
+  { key: 'reviews', label: 'Reviews', icon: MessageSquare, roles: RUNS_THE_WEBSITE },
+  { key: 'calendar', label: 'Block dates', icon: CalendarX2, roles: RUNS_THE_WEBSITE },
+  { key: 'promos', label: 'Discounts', icon: Tag, roles: RUNS_THE_SHOP },
+  { key: 'company', label: 'Company details', icon: Building2, roles: OWNER_ONLY },
+  { key: 'staff', label: 'Staff accounts', icon: Users, roles: OWNER_ONLY },
+  { key: 'account', label: 'My password', icon: KeyRound, roles: EVERYONE },
 ];
 
-export default function AdminDashboard({ onSessionExpired }: { onSessionExpired: () => void }) {
+export default function AdminDashboard({
+  role,
+  onSessionExpired,
+}: {
+  role: AdminRole;
+  onSessionExpired: () => void;
+}) {
+  const tabs = TABS.filter((entry) => entry.roles.includes(role));
   const [tab, setTab] = useState<Tab>('overview');
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +99,7 @@ export default function AdminDashboard({ onSessionExpired }: { onSessionExpired:
   return (
     <Section className="py-8">
       <nav className="flex flex-wrap gap-1.5 mb-6" aria-label="Admin sections">
-        {TABS.map(({ key, label, icon: Icon }) => (
+        {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             type="button"
@@ -87,15 +124,19 @@ export default function AdminDashboard({ onSessionExpired }: { onSessionExpired:
         </div>
       )}
 
-      {tab === 'overview' && <OverviewTab onError={handleError} />}
+      {tab === 'overview' && <OverviewTab role={role} onError={handleError} />}
       {tab === 'orders' && <OrdersTab onError={handleError} />}
       {tab === 'inventory' && <InventoryLink onError={handleError} />}
       {tab === 'bookings' && <BookingsTab onError={handleError} />}
       {tab === 'quotes' && <QuotesTab onError={handleError} />}
-      {tab === 'catalog' && <CatalogEditor onError={handleError} />}
+      {tab === 'catalog' && <CatalogEditor role={role} onError={handleError} />}
       {tab === 'reviews' && <ReviewsTab onError={handleError} />}
       {tab === 'calendar' && <BlockedDatesTab onError={handleError} />}
       {tab === 'promos' && <DiscountsTab onError={handleError} />}
+      {tab === 'content' && <ContentEditor onError={handleError} />}
+      {tab === 'company' && <CompanyDetails onError={handleError} />}
+      {tab === 'staff' && <StaffAccounts onError={handleError} />}
+      {tab === 'account' && <OwnPasswordTab />}
     </Section>
   );
 }
@@ -104,14 +145,17 @@ type ErrorHandler = { onError: (err: unknown) => void };
 
 /* ------------------------------------------------------------------ overview */
 
-function OverviewTab({ onError }: ErrorHandler) {
+function OverviewTab({ role, onError }: ErrorHandler & { role: AdminRole }) {
   const [stats, setStats] = useState<Awaited<ReturnType<typeof adminApi.stats>> | null>(null);
   const [integrations, setIntegrations] = useState<Awaited<ReturnType<typeof adminApi.integrations>> | null>(null);
 
   useEffect(() => {
     adminApi.stats().then(setStats).catch(onError);
-    adminApi.integrations().then(setIntegrations).catch(onError);
-  }, [onError]);
+    // Which payment gateways and couriers are wired up is the owner's business,
+    // so only they are shown it — and only they are asked for it, or everyone
+    // else would open the portal to a 403 banner they can do nothing about.
+    if (role === 'super_admin') adminApi.integrations().then(setIntegrations).catch(onError);
+  }, [onError, role]);
 
   if (!stats) return <Spinner label="Loading dashboard…" />;
 
@@ -138,6 +182,7 @@ function OverviewTab({ onError }: ErrorHandler) {
         ))}
       </div>
 
+      {RUNS_THE_SHOP.includes(role) && (
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="text-base font-extrabold text-slate-900">Export your data</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -154,6 +199,7 @@ function OverviewTab({ onError }: ErrorHandler) {
           ))}
         </div>
       </div>
+      )}
 
       {integrations && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -800,5 +846,100 @@ function DiscountsTab({ onError }: ErrorHandler) {
         </ul>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- own password */
+
+/**
+ * Changing your own password, available to every role.
+ *
+ * The current password is required, which is what stops a session left open on
+ * a shared terminal from being turned into a permanent lock-out.
+ */
+function OwnPasswordTab() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fields, setFields] = useState<Record<string, string>>({});
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setFields({});
+    setDone(false);
+
+    if (password !== confirmation) {
+      setFields({ confirmation: 'These two do not match.' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await adminApi.changeOwnPassword(currentPassword, password);
+      setDone(true);
+      setCurrentPassword('');
+      setPassword('');
+      setConfirmation('');
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 400 || err.status === 401)) {
+        setFields(err.fields);
+        setError(err.message);
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} noValidate className="max-w-md space-y-4">
+      <div>
+        <h2 className="text-base font-extrabold text-slate-900">Change your password</h2>
+        <p className="mt-0.5 text-sm text-slate-500">
+          If you have forgotten it, ask a super admin to set a new one for you.
+        </p>
+      </div>
+
+      {error && <Alert tone="error">{error}</Alert>}
+      {done && <Alert tone="success">Your password has been changed.</Alert>}
+
+      <TextField
+        label="Current password"
+        type="password"
+        value={currentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
+        error={fields.currentPassword}
+        autoComplete="current-password"
+        required
+      />
+      <TextField
+        label="New password"
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        error={fields.password}
+        hint="At least 12 characters. A short phrase you will remember beats a scramble you will write down."
+        autoComplete="new-password"
+        required
+      />
+      <TextField
+        label="New password again"
+        type="password"
+        value={confirmation}
+        onChange={(e) => setConfirmation(e.target.value)}
+        error={fields.confirmation}
+        autoComplete="new-password"
+        required
+      />
+
+      <Button type="submit" loading={saving}>
+        Change password
+      </Button>
+    </form>
   );
 }

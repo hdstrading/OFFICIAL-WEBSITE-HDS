@@ -15,7 +15,7 @@ import { api, ApiError } from '../lib/api';
 import { useCart } from '../lib/cart';
 import { peso } from '../lib/format';
 import { Seo } from '../lib/seo';
-import { SITE } from '../config/site';
+import { useCompany, usePrimaryHotline } from '../lib/company';
 import type { DeliveryAddress, DeliveryOption, PaymentMethod, PaymentMethodOption } from '../types';
 import {
   Alert,
@@ -50,6 +50,8 @@ const emptyAddress: DeliveryAddress = {
 };
 
 export default function CheckoutPage() {
+  const company = useCompany();
+  const primaryHotline = usePrimaryHotline();
   const navigate = useNavigate();
   const { items, subtotal, count, toPayload, clear } = useCart();
   const [searchParams] = useSearchParams();
@@ -789,7 +791,7 @@ export default function CheckoutPage() {
                 Prefer to talk it through?
               </p>
               <p className="mt-1.5 text-xs text-slate-600 leading-relaxed">
-                Call {SITE.hotlines[0].numbers[0]} during {SITE.hours.label}, or{' '}
+                Call {primaryHotline} during {company.hours.label}, or{' '}
                 <Link to="/quote" className="font-semibold text-cyan-700 hover:underline">
                   request a formal quotation
                 </Link>{' '}

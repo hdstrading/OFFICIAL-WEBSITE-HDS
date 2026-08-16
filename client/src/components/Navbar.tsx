@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { CalendarCheck, Menu, Phone, Search, ShoppingCart, X } from 'lucide-react';
 import { SITE, telHref } from '../config/site';
+import { useCompany, usePrimaryHotline } from '../lib/company';
 import { useCart } from '../lib/cart';
 import { Button } from './ui';
 
@@ -11,6 +12,7 @@ const NAV_LINKS = [
   { to: '/services', label: 'Cleaning services' },
   { to: '/book', label: 'Book a visit' },
   { to: '/reviews', label: 'Reviews' },
+  { to: '/resources', label: 'News & guides' },
   { to: '/about', label: 'About us' },
   { to: '/contact', label: 'Contact' },
 ];
@@ -31,7 +33,8 @@ export default function Navbar() {
     };
   }, [mobileOpen]);
 
-  const primaryHotline = SITE.hotlines[0].numbers[0];
+  const company = useCompany();
+  const primaryHotline = usePrimaryHotline();
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200">
@@ -40,7 +43,7 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-9 flex items-center justify-between gap-4">
           <p className="truncate">
             <span className="hidden sm:inline">Institutional cleaning supplies &amp; pool care · </span>
-            {SITE.hours.label}
+            {company.hours.label}
           </p>
           <a
             href={telHref(primaryHotline)}

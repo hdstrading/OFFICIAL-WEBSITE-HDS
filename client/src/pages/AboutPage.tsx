@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Building2, Droplets, Handshake, PackageCheck, ShieldCheck, Users } from 'lucide-react';
 import { SITE } from '../config/site';
+import { useCompany } from '../lib/company';
 import { Seo, breadcrumbSchema } from '../lib/seo';
 import { Button, PageHeader, Section } from '../components/ui';
 
@@ -39,6 +40,7 @@ const SECTORS = [
 ];
 
 export default function AboutPage() {
+  const company = useCompany();
   return (
     <>
       <Seo
@@ -110,25 +112,25 @@ export default function AboutPage() {
               <dl className="mt-4 space-y-3 text-sm">
                 <div>
                   <dt className="text-xs text-slate-500">Registered name</dt>
-                  <dd className="font-semibold text-slate-900">{SITE.legalName}</dd>
+                  <dd className="font-semibold text-slate-900">{company.legalName}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Registration</dt>
-                  <dd className="font-semibold text-slate-900">{SITE.registration}</dd>
+                  <dd className="font-semibold text-slate-900">{company.registration}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Registered office</dt>
-                  <dd className="font-semibold text-slate-900">{SITE.office.full}</dd>
+                  <dd className="font-semibold text-slate-900">{company.office.full}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Branches</dt>
                   <dd className="font-semibold text-slate-900">
-                    {SITE.hotlines.map((h) => h.branch).join(' · ')}
+                    {company.hotlines.map((h) => h.branch).join(' · ')}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Operating hours</dt>
-                  <dd className="font-semibold text-slate-900">{SITE.hours.label}</dd>
+                  <dd className="font-semibold text-slate-900">{company.hours.label}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Website</dt>

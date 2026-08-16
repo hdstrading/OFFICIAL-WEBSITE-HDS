@@ -1,9 +1,16 @@
 /**
- * Single source of truth for everything about the business that appears on the
- * website: the domain, the contact desks, the hotlines and the office hours.
+ * The business details the site ships with.
  *
- * Change a phone number or an email address here once and it updates the navbar,
- * the contact page, the footer, the emails and the structured data all at once.
+ * These are no longer where a phone number gets changed: contact details, office
+ * hours, addresses, hotlines and the free-delivery threshold are edited by the
+ * super admin from the staff portal and served by the API. Use `useCompany()`
+ * from `lib/company` to read them.
+ *
+ * What is left here has two jobs. The domain, the currency and the VAT rate are
+ * genuinely build-time — they belong in the code. Everything else is the
+ * fallback: what the page shows on the first frame before the API answers, and
+ * what it falls back to if the API is unreachable. The server holds the same
+ * defaults, so if you change one, change both.
  */
 
 export const SITE = {
@@ -86,9 +93,6 @@ export const SITE = {
 
 /** Strips spaces so a number can be used in a tel: link. */
 export const telHref = (number: string) => `tel:+63${number.replace(/\D/g, '').replace(/^0/, '')}`;
-
-/** Every hotline as one flat list, for the navbar ticker and structured data. */
-export const ALL_HOTLINES = SITE.hotlines.flatMap((h) => h.numbers);
 
 export const absoluteUrl = (path: string) =>
   `${SITE.url}${path.startsWith('/') ? path : `/${path}`}`;

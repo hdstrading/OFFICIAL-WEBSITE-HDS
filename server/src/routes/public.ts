@@ -6,6 +6,7 @@ import {
   bookings,
   discounts,
   orders,
+  posts,
   products,
   quotes,
   reviews,
@@ -22,6 +23,7 @@ import {
 } from '../lib/availability.js';
 import { quoteDeliveryOptions, resolveDeliveryOption } from '../lib/delivery.js';
 import { reverseGeocode } from '../lib/geocode.js';
+import { buildSiteInfo } from '../lib/site-info.js';
 import {
   bookingConfirmationEmail,
   orderConfirmationEmail,
@@ -694,9 +696,12 @@ publicRouter.post('/reviews', writeLimiter, (req, res, next) => {
 
 /** Everything the front end needs to render contact details and options. */
 publicRouter.get('/site-info', (_req, res) => {
+  const company = buildSiteInfo();
   res.json({
     siteUrl: env.siteUrl,
-    freeDeliveryThreshold: 5000,
+    /** Company details as the super admin last saved them, defaults filled in. */
+    company,
+    freeDeliveryThreshold: company.delivery.freeThreshold,
     depositPercent: env.bookingDepositPercent,
     paymentsLive: paymentsConfigured,
     /** Public by design and restricted by referrer. Blank simply hides the map. */
@@ -708,6 +713,35 @@ publicRouter.get('/site-info', (_req, res) => {
       reviews: reviews.count(),
     },
   });
+});
+
+/* -------------------------------------------------------------------- content */
+
+/**
+ * Announcements, articles, videos and FAQs.
+ *
+ * Only published posts are served. Drafts exist in the same table and are
+ * filtered out in the query rather than here, so there is no route that can
+ * accidentally leak one.
+ */
+publicRouter.get('/posts', (req, res) => {
+  const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+  const allowed = ['announcement', 'article', 'video', 'faq'] as const;
+  const filter = allowed.includes(type as (typeof allowed)[number])
+    ? (type as (typeof allowed)[number])
+    : undefined;
+  res.json({ posts: posts.published(filter) });
+});
+
+publicRouter.get('/posts/:slug', (req, res) => {
+  const post = posts.bySlug(req.params.slug);
+  // A draft answers the same way a missing post does — knowing that an unpublished
+  // announcement exists is itself information we have not chosen to give out.
+  if (!post || !post.published) {
+    res.status(404).json({ error: 'We could not find that page.' });
+    return;
+  }
+  res.json({ post });
 });
 
 /** Public discount codes, so the cart can show what is on offer. */
