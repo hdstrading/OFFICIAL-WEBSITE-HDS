@@ -51,7 +51,7 @@
   # search results, even if a URL is shared or leaks through a referrer.
   #
   # Update the first pattern if you change ADMIN_PATH.
-  <If "%{REQUEST_URI} =~ m#^/staff-portal-9f3c#">
+  <If "%{REQUEST_URI} =~ m#^/adminportal#">
     Header always set X-Robots-Tag "noindex, nofollow, noarchive"
   </If>
   <If "%{REQUEST_URI} =~ m#^/(checkout|order/|booking/|quote/)#">

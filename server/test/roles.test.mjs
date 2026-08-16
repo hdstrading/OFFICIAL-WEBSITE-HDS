@@ -196,5 +196,38 @@ check('with the current one it works', changed.status === 200, `status=${changed
 check('the old password stops working', (await signIn('web@example.com', 'writes-the-website-2026')).status === 401);
 check('the new one works', (await signIn('web@example.com', 'a-brand-new-password-2026')).ok);
 
+/* ------------------------------------------------- guessing at one account */
+
+/**
+ * The per-address limit stops one machine hammering the portal. This is the
+ * other half: many machines each trying one password against a known email.
+ * It matters more now the portal lives at a memorable address.
+ */
+const VICTIM = 'locked@example.com';
+await owner.call('POST', '/api/admin/users', {
+  email: VICTIM,
+  name: 'Target',
+  role: 'website_admin',
+  password: 'the-real-password-2026',
+});
+
+// Each attempt comes from a different forwarded address, so only the
+// per-account counter can stop them.
+let lockedAt = 0;
+for (let attempt = 1; attempt <= 12; attempt++) {
+  const res = await fetch(`${BASE}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': `10.9.0.${attempt}` },
+    body: JSON.stringify({ email: VICTIM, password: `guess-number-${attempt}` }),
+  });
+  if (res.status === 429 && !lockedAt) lockedAt = attempt;
+}
+check('repeated guesses at one account are cut off', lockedAt > 0, `locked on attempt ${lockedAt}`);
+check('and the correct password is refused while locked', (await signIn(VICTIM, 'the-real-password-2026')).status === 429);
+check(
+  'while a different account is unaffected',
+  (await signIn('web@example.com', 'a-brand-new-password-2026')).ok,
+);
+
 console.log(`\n${pass}/${total} checks passed`);
 process.exit(pass === total ? 0 : 1);

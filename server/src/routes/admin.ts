@@ -62,19 +62,77 @@ const loginLimiter = rateLimit({
   message: { error: 'Too many sign-in attempts. Please try again in 15 minutes.' },
 });
 
+/**
+ * A second limit, counted per account rather than per address.
+ *
+ * The limiter above stops one machine hammering the portal. It does not stop
+ * many machines each trying one password against the same account, which is the
+ * shape a real attempt on a known email address takes. This closes that: ten
+ * failures against one account and it stops answering for fifteen minutes, no
+ * matter where the attempts come from.
+ *
+ * Kept in memory deliberately. The window is short, the entries are tiny, and a
+ * restart clearing it is not a hole worth a database write on every sign-in.
+ */
+const ACCOUNT_LOCK_WINDOW_MS = 15 * 60 * 1000;
+const ACCOUNT_LOCK_AFTER = 10;
+const failuresByAccount = new Map<string, { count: number; firstAt: number }>();
+
+function accountIsLocked(email: string): boolean {
+  const record = failuresByAccount.get(email);
+  if (!record) return false;
+  if (Date.now() - record.firstAt > ACCOUNT_LOCK_WINDOW_MS) {
+    failuresByAccount.delete(email);
+    return false;
+  }
+  return record.count >= ACCOUNT_LOCK_AFTER;
+}
+
+function recordFailure(email: string) {
+  const record = failuresByAccount.get(email);
+  if (!record || Date.now() - record.firstAt > ACCOUNT_LOCK_WINDOW_MS) {
+    failuresByAccount.set(email, { count: 1, firstAt: Date.now() });
+    return;
+  }
+  record.count += 1;
+}
+
+// Entries expire on read, but an address tried once and then abandoned would sit
+// there forever. Sweeping hourly keeps the map bounded on a long-lived process.
+setInterval(() => {
+  const cutoff = Date.now() - ACCOUNT_LOCK_WINDOW_MS;
+  for (const [email, record] of failuresByAccount) {
+    if (record.firstAt < cutoff) failuresByAccount.delete(email);
+  }
+}, 60 * 60 * 1000).unref();
+
 adminRouter.post('/login', loginLimiter, (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Please enter your email and password.' });
     return;
   }
-  const user = verifyCredentials(parsed.data.email, parsed.data.password);
+
+  const email = parsed.data.email.trim().toLowerCase();
+  if (accountIsLocked(email)) {
+    res.status(429).json({
+      error: 'Too many sign-in attempts on this account. Please try again in 15 minutes.',
+    });
+    return;
+  }
+
+  const user = verifyCredentials(email, parsed.data.password);
   if (!user) {
+    recordFailure(email);
     // Deliberately vague — do not reveal which half was wrong, nor whether the
     // account exists, is deactivated, or simply had the password mistyped.
     res.status(401).json({ error: 'Those credentials do not match our records.' });
     return;
   }
+
+  // Signing in clears the count, so a colleague who mistyped twice and then got
+  // it right does not carry those failures into their next bad morning.
+  failuresByAccount.delete(email);
   const expiresAt = startSession(res, user);
   res.json({ email: user.email, name: user.name, role: user.role, expiresAt });
 });

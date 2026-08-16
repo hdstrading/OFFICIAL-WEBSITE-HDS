@@ -160,7 +160,7 @@ Fill in at minimum:
 - `SITE_URL=https://hdstradingopc.com`
 - `ADMIN_PASSWORD` — generate one with `openssl rand -base64 24`
 - `SESSION_SECRET` — generate one with `openssl rand -hex 32`
-- `ADMIN_PATH` **and** `VITE_ADMIN_PATH` — the same secret value in both
+- `ADMIN_PATH` **and** `VITE_ADMIN_PATH` — the same value in both
 - `DATABASE_FILE=/var/www/hdstradingopc/server/data/hds.db`
 
 The site runs without the payment, email and courier keys — it simply hides the
@@ -477,13 +477,50 @@ and the `[Order]` notification to your team. Check spam on the first one.
 ## 9. Sign in to the staff portal
 
 Go to `https://hdstradingopc.com/<your ADMIN_PATH>` — for example
-`https://hdstradingopc.com/staff-portal-9f3c`.
+`https://hdstradingopc.com/adminportal`.
 
-Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+Sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`. On the first start those two
+create the first account, a super admin. After that the environment stops being
+the password: passwords live in the database so each person can have their own,
+and changing `ADMIN_PASSWORD` later does nothing.
 
 Nothing on the public website links to this page, it is excluded from search
-engines, and it is not listed in `robots.txt` (which would advertise it). Treat
-the URL itself as a secret.
+engines, and it is not listed in `robots.txt` (which would advertise it). But it
+is not a secret — what guards it is that everybody has their own password,
+sign-ins are rate limited per address *and* per account, and ten wrong guesses
+lock an account for fifteen minutes.
+
+### Give everybody their own account
+
+**Staff accounts** in the portal, super admin only. There are three kinds of
+access:
+
+| Access | What they can reach |
+| --- | --- |
+| Super admin | Everything, plus staff accounts, company details and integrations |
+| Inventory manager | Products, orders, quotations, discounts and the warehouse link |
+| Website administrator | Services, bookings, the calendar, reviews and published content |
+
+Give each person their own account and stop sharing one. It is the only way to
+know who changed a price, and the only way to remove one person's access
+without changing everybody's password.
+
+The last active super admin cannot be demoted, switched off or deleted, and
+nobody can delete the account they are signed in with — an installation with no
+super admin cannot manage its own accounts.
+
+### If everybody is locked out
+
+Passwords are in the database, so editing `.env` will not help. On the server:
+
+```bash
+cd /var/www/hdstradingopc
+npm run admin:reset --workspace server -- you@example.com
+```
+
+It asks for the new password twice, without echoing it, then resets that
+account — or creates it as a super admin if the address is new — and reactivates
+it if it had been switched off.
 
 ---
 
@@ -532,9 +569,9 @@ generated from your live catalog, so it stays current on its own.
 
 ### Optional: courier accounts
 
-Lalamove and Transportify already appear at checkout with indicative rates that
-your team confirms before dispatch. Adding API credentials replaces those with
-live quotes and lets staff book a rider from the order page. See `.env.example`.
+Lalamove appears at checkout with indicative rates that your team confirms
+before dispatch. Adding API credentials replaces those with live quotes and lets
+staff book a rider from the order page. See `deploy/COURIERS.md`.
 
 ---
 
@@ -605,6 +642,25 @@ the path is compiled into the browser bundle, so a restart alone is not enough:
 ```bash
 npm run build && systemctl restart hdstradingopc
 ```
+
+If you serve the static site from the IONOS webspace as well, update the
+`noindex` rule in `deploy/webspace/.htaccess` to match the new path.
+
+### Editing contact details, hours and hotlines
+
+**Company details** in the portal, super admin only. Contact numbers, opening
+hours, addresses, email desks, social links, the emergency line and the
+free-delivery threshold are all edited there and live the moment they are saved
+— no deploy, no developer. Clearing a field puts the original value back rather
+than leaving a blank space, so the way to remove a line is to replace it.
+
+### Publishing announcements, guides, videos and FAQs
+
+**Content** in the portal, for website administrators and super admins. Posts
+stay invisible until the *Published* box is ticked, so something half-written
+can be saved and finished tomorrow. Announcements, guides and videos appear at
+`/resources`; FAQs appear at `/faq` and are marked up so Google can show them
+directly in search results.
 
 ---
 
@@ -738,8 +794,7 @@ SMTP settings are blank. If they are set and mail still fails, the log records
 the SMTP error. Gmail requires an App Password, not the account password.
 
 **Courier rates say "Indicative rate"**
-Lalamove or Transportify credentials are missing, or the customer did not pin a
-map location. The order still goes through — staff confirm the exact courier
+Lalamove credentials are missing, or the customer did not pin a map location. The order still goes through — staff confirm the exact courier
 fee before dispatch.
 
 **Out of disk space**

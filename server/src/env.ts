@@ -93,10 +93,14 @@ export const env = {
   },
 
   /**
-   * The admin panel lives at an unguessable path so it is not discoverable by
-   * browsing. It is never linked from the site and never listed in the sitemap.
+   * Where the staff portal is served. Never linked from the site, never in the
+   * sitemap, and served `noindex` — but no longer secret, because a memorable
+   * address staff can type beats an unguessable one they write down. What
+   * actually guards it is per-user passwords and the rate limit on sign-in.
+   *
+   * Must match VITE_ADMIN_PATH in the client build.
    */
-  adminPath: (process.env.ADMIN_PATH ?? 'staff-portal-9f3c').replace(/^\/+|\/+$/g, ''),
+  adminPath: (process.env.ADMIN_PATH ?? 'adminportal').replace(/^\/+|\/+$/g, ''),
 
   /** PayMongo — cards, GCash, Maya and online bank transfer. */
   paymongo: {

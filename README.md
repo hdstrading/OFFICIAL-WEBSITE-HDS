@@ -25,7 +25,7 @@ process on one domain, so there is a single thing to deploy and keep running.
 - Add to cart and **pay online** — credit/debit card, GCash, Maya, online bank
   transfer, manual bank deposit, or cash on delivery
 - Choose delivery: our own fleet (free over ₱5,000), warehouse pickup, or
-  same-day via **Lalamove** or **Transportify**
+  same-day via **Lalamove**
 - **See which dates and time slots are still open** and book a cleaning or pool
   service, holding the slot with a **down payment**
 - Request a formal VAT-registered quotation for procurement approval
@@ -33,8 +33,19 @@ process on one domain, so there is a single thing to deploy and keep running.
   needed
 - **Rate and review** products and services; reviews from a real order are
   marked verified
+- Read announcements, guides and videos at `/resources`, and answers to common
+  questions at `/faq`
 
-**For staff** (at a secret, unlisted URL)
+**For staff** (at an unlisted URL, `/adminportal` by default)
+
+Everybody signs in with their own email address and password, under one of three
+kinds of access:
+
+| Access | What they can reach |
+| --- | --- |
+| Super admin | Everything, plus staff accounts, company details and integrations |
+| Inventory manager | Products, orders, quotations, discounts and the warehouse link |
+| Website administrator | Services, bookings, the calendar, reviews and published content |
 
 - Dashboard of revenue, orders, bookings, deposits owed and pending reviews
 - Add, edit and remove products and services — changes are live immediately
@@ -42,6 +53,11 @@ process on one domain, so there is a single thing to deploy and keep running.
 - Manage bookings, record deposits paid, close dates on the booking calendar
 - Publish or hide customer reviews
 - Create discount codes
+- **Publish announcements, guides, videos and FAQs** — drafts stay invisible
+  until published
+- **Edit every contact detail without a deploy** — hotlines, opening hours,
+  addresses, email desks, the emergency line and the free-delivery threshold
+- Add and remove staff accounts, and set what each person may reach
 - Export orders, bookings and quotations to CSV for Excel or Google Sheets
 
 ---
@@ -58,7 +74,7 @@ npm run dev
 
 - Website: <http://localhost:3000>
 - API: <http://localhost:4000>
-- Staff portal: <http://localhost:3000/staff-portal-9f3c>
+- Staff portal: <http://localhost:3000/adminportal>
 
 `npm run dev` starts the API and the website together. The website proxies
 `/api` to the server, so both behave exactly as they will in production.
@@ -119,7 +135,7 @@ credentials are missing disappear cleanly rather than failing at the last step:
 | --------------------- | ----------------------------------------------------------------------------- |
 | PayMongo              | Card and e-wallet options are hidden; bank transfer and COD still work         |
 | SMTP                  | Orders still go through; confirmation emails are logged instead of sent        |
-| Lalamove/Transportify | Couriers are still offered at an indicative rate, confirmed before dispatch    |
+| Lalamove              | Couriers are still offered at an indicative rate, confirmed before dispatch    |
 
 The two exceptions are `ADMIN_PASSWORD` and `SESSION_SECRET`: in production the
 server refuses to start without them, rather than leaving the staff portal open.
