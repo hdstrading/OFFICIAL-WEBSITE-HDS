@@ -63,19 +63,12 @@ built to rely on them:
 
 ---
 
-## What the inventory system needs
+## What the inventory system needed  ✅ all merged
 
-One gap. `GET /integration/stock` returns stock levels but **not prices**, and it
-returns every active item with a SKU regardless of whether *Sales Information* is
-ticked. So today the website can see how many exist, but not what they cost or
-whether they are meant to be sold online.
+Everything below was proposed here, reviewed, and is now live in the inventory
+system. It is kept as the record of why each piece exists.
 
-Everything required is already on the `items` table — `selling_price`,
-`tax_rate`, `sales_description`, `image`, `category` and `sell_enabled` (the
-column behind the *Sales Information* checkbox). It is only a matter of exposing
-them.
-
-### Proposed: a new `/integration/catalog` endpoint
+### `/integration/catalog` — merged in #42
 
 Deliberately a **new** endpoint rather than a change to `/integration/stock`.
 Adding a `sell_enabled = 1` filter to the existing one would silently shrink its
@@ -154,7 +147,7 @@ so on. `INVENTORY_API_URL` is the bare host — the website adds the prefix.
 
 ## How the website uses it
 
-### Catalog sync — inventory to website  ⏳ waiting on the endpoint above
+### Catalog sync — inventory to website  ✅ live
 
 A scheduled pull, every `INVENTORY_SYNC_MINUTES` (default 15), plus a **Sync
 now** button in the staff portal.
@@ -220,6 +213,11 @@ The order push was tested end to end against a stand-in for the inventory API:
 | Unknown SKU | Marked *needs attention* with the SKU named; no pointless auto-retries |
 | Same order pushed twice | No duplicate sales order created |
 | Staff "Send all now" after an outage | Backlog delivered immediately, ignoring retry timers |
+| Lowercase SKU against an uppercase item | Matched; order reached the warehouse |
+| Sample item ticked *Sales Information* | Held off the shop by `INVENTORY_SKU_EXCLUDE`, still sellable in inventory |
+| Warehouse marked packed → shipped → delivered | Customer tracking followed within one poll each time |
+| Card-rate processing fee, no discount | ₱1,484.70 both sides, fee its own field on the sales order |
+| Processing fee **and** a discount together | ₱1,367.10 both sides — gross-up and fee coexist |
 
 That first row is the one that mattered most. The inventory system taxes the
 pre-discount subtotal while the website taxes the post-discount net, so sending
@@ -292,91 +290,64 @@ The rule throughout: **the inventory system being unavailable must never stop
 the website taking money.** Orders survive, and reconcile when the link returns.
 
 ---
+## Merged since: SKU case, status, and the processing fee
 
-## Proposed: two further changes to the inventory system
+All three were proposed here and are now live in the inventory system.
 
-Both are for review, like the catalog endpoint was. Neither has been applied.
+### 1. SKUs match regardless of case — merged in #43
 
-### 1. Match SKUs case-insensitively
+`POST /integration/orders` looked items up with `WHERE sku = ?`, which in SQLite
+is case-sensitive on text, so a line reading `hds-luxe-san` failed against an
+item stored as `HDS-LUXE-SAN` with an "unknown SKU" that looked like a missing
+item rather than a capitalisation difference. It now matches `COLLATE NOCASE`,
+preferring an exact match and an active item where the data is ambiguous —
+`items.sku` has no unique constraint, so two rows genuinely can differ only by
+case, and the ordering makes the answer at least deterministic.
 
-`POST /integration/orders` looks items up with `WHERE sku = ?`, which in SQLite
-is case-sensitive on text. A product entered on the website as `hds-luxe-san`
-therefore fails against an item stored as `HDS-LUXE-SAN`, with an "unknown SKU"
-that looks like a missing item rather than a capitalisation difference.
+The catalog sync matches the same way, on lowercased SKUs.
 
-One line, in `server/routes/integration.js`:
+### 2. Order status is reported back — merged in #43
 
-```diff
--    const item = sku ? db.prepare('SELECT id, name, selling_price, tax_rate FROM items WHERE sku = ?').get(sku) : null;
-+    // Case-insensitive: a SKU is an identifier, and staff type it into two
-+    // different systems. Treating `HDS-001` and `hds-001` as different items
-+    // rejects the order with a message that reads like the item is missing.
-+    const item = sku
-+      ? db.prepare('SELECT id, name, selling_price, tax_rate FROM items WHERE sku = ? COLLATE NOCASE').get(sku)
-+      : null;
+`GET /integration/orders?references=…` returns where a batch of orders has got
+to. Capped at 200 references per request, which the website batches against; an
+unknown reference is absent from the reply rather than failing the whole batch,
+because during a backlog the website legitimately holds orders the warehouse has
+not seen yet.
+
+### 3. Processing fee — merged in #44 and #45
+
+**The website computes the fee and sends the peso amount; the inventory system
+records it verbatim.** Which rate applies depends on the channel the customer
+picked at checkout, and the website is where that choice was made and shown, so
+it is the only place that can know the figure the customer actually agreed to.
+
+Sent on every order push as two fields:
+
+```jsonc
+"processing_fee": 70.70,          // exact peso amount, after tax
+"payment_method": "card"          // recorded, and the key for their fallback
 ```
 
-The website now stores SKUs exactly as typed rather than forcing upper case, so
-this is what makes the two agree.
+It lands after tax on both sides: the website takes its percentage of the full
+payable amount (goods + VAT + delivery), and the inventory system adds that
+amount on top of its own taxed total. It is sent as `processing_fee` rather than
+folded into `shipping_fee`, which would have made the totals agree while
+corrupting every delivery-cost report the warehouse runs.
 
-### 2. Report order status back
+> **Leave the inventory system's fallback rates blank, or keep them exactly in
+> step with the website's.** The inventory system can compute a fee itself from
+> per-method rates under *Settings → Website / Integration API*, but only when an
+> order arrives with no amount. If the website's rate for a method is ever set to
+> zero while a fallback rate is configured for it, the sales order will come out
+> **above** the customer's receipt by that percentage. One number, one owner: the
+> website.
 
-The warehouse knows when an order was packed and when it shipped; the customer
-asking "where is my order?" is on the website. There is currently no way for one
-to tell the other.
+`expectedInventoryTotal()` re-checks the arithmetic on every push, and its
+warning names the processing fee specifically when the shortfall matches it —
+so a version skew between the two systems is reported rather than discovered on
+a printed delivery note.
 
-A read-only endpoint, taking the references the website already knows:
-
-```js
-/**
- * Progress of website orders, for the storefront to show its customers.
- *
- * Batched deliberately: the storefront polls every open order at once, so this
- * costs one query however many are in flight, rather than one request each.
- *
- * `pick_status` comes from the order's latest pick list, which is where picking
- * lives — the sales order itself goes confirmed → packed without passing
- * through a picked state.
- */
-router.get('/integration/orders', (req, res) => {
-  const references = String(req.query.references || '')
-    .split(',')
-    .map((r) => r.trim())
-    .filter(Boolean)
-    .slice(0, 200); // A storefront with more than 200 orders in flight can page.
-
-  if (!references.length) {
-    return res.status(400).json({ error: 'references is required' });
-  }
-
-  const placeholders = references.map(() => '?').join(',');
-  const rows = db
-    .prepare(
-      `SELECT so.id, so.so_number, so.reference, so.status,
-              (SELECT pl.status FROM pick_lists pl
-                WHERE pl.so_id = so.id ORDER BY pl.id DESC LIMIT 1) AS pick_status
-         FROM sales_orders so
-        WHERE so.reference IN (${placeholders}) AND so.reference <> ''`
-    )
-    .all(...references);
-
-  res.json({
-    ok: true,
-    as_of: new Date().toISOString(),
-    orders: rows.map((row) => ({
-      reference: row.reference,
-      so_number: row.so_number,
-      status: row.status,
-      pick_status: row.pick_status || null,
-    })),
-  });
-});
-```
-
-Reads only, writes nothing, and returns no financial detail — just where each
-order has got to.
-
-### How the website uses it
+### How the website shows status to the customer
 
 Polled every `INVENTORY_RETRY_MINUTES` for orders that were sent and are not yet
 finished:

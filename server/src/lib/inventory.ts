@@ -159,11 +159,22 @@ export function buildSalesOrderPayload(order: Order) {
     tax_mode: 'exclusive' as const,
     discount: money(order.discountAmount * (1 + VAT_RATE)),
     shipping_fee: order.deliveryFee,
-    // The gateway fee the customer paid. Sent as an adjustment rather than
-    // folded into shipping, which would quietly corrupt every delivery-cost
-    // report the warehouse runs. Ignored by inventory systems that do not take
-    // an adjustment, in which case the total check below reports the shortfall.
-    adjustment: order.processingFee,
+    // THE GATEWAY FEE IS SENT AS AN AMOUNT, NOT A RATE. Which rate applies
+    // depends on the channel the customer picked at checkout, and the website is
+    // where that choice was made and shown — so it sends the exact peso figure
+    // the customer agreed to and the inventory system records it verbatim. The
+    // alternative, each system applying its own configured percentage, is two
+    // sources of truth for one number and a receipt that eventually disagrees
+    // with the invoice.
+    //
+    // It lands after tax on both sides: we take our percentage of the full
+    // payable amount, and the inventory system adds it on top of its taxed
+    // total. Sent as `processing_fee` rather than folded into shipping, which
+    // would corrupt every delivery-cost report the warehouse runs.
+    processing_fee: order.processingFee,
+    // Recorded on the sales order, and the key their optional rate fallback
+    // would use if an order ever arrived without an amount.
+    payment_method: order.paymentMethod,
     delivery_method: order.delivery.label,
     payment_terms: PAYMENT_TERMS[order.paymentMethod],
     notes: buildNotes(order),
@@ -244,7 +255,7 @@ export async function pushOrder(order: Order): Promise<SalesOrderResult> {
         `was charged ${order.total} (expected ${expected}).` +
         (looksLikeTheFee
           ? ` The difference is exactly the ${money(order.processingFee)} processing fee, so this ` +
-            'inventory system is not yet accepting the adjustment field.'
+            'inventory system is not recording processing_fee — check that it is up to date.'
           : ' Check the tax and discount mapping.'),
     );
   }
