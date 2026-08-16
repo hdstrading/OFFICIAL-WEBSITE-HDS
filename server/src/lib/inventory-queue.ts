@@ -5,6 +5,7 @@ import {
   InventoryError,
   mapInventoryStatus,
   pushOrder,
+  voidOrder,
 } from './inventory.js';
 import { syncCatalog } from './inventory-catalog.js';
 import type { Order } from '../types.js';
@@ -139,6 +140,90 @@ export async function drainQueue({ ignoreBackoff = false } = {}): Promise<void> 
   }
 }
 
+/* ------------------------------------------------ releasing cancelled stock */
+
+/**
+ * Result of asking the warehouse to void a cancelled order's sales order.
+ *
+ * `refused` is the one worth reading carefully. It means the goods have already
+ * been packed or shipped, at which point the correct instrument is a return or a
+ * credit note — both of which exist in the inventory system and both of which
+ * are somebody's decision rather than an API call's. The website must not
+ * pretend the stock came back.
+ */
+export type VoidOutcome =
+  | { outcome: 'released'; salesOrder?: string }
+  | { outcome: 'nothing_to_release' }
+  | { outcome: 'refused'; reason: string }
+  | { outcome: 'retry'; reason: string };
+
+/**
+ * Releases the stock a cancelled order was holding.
+ *
+ * Called when an order is cancelled, and again by the worker for any cancelled
+ * order whose release has not gone through — because the inventory system being
+ * down must not be a reason staff cannot cancel an order.
+ */
+export async function attemptVoid(order: Order): Promise<VoidOutcome> {
+  try {
+    const result = await voidOrder(order.reference);
+    orders.setInventoryVoidStatus(order.id, 'released', null);
+    console.info(
+      `Cancelled ${order.reference}: released ${result.so_number ?? 'its sales order'}` +
+        `${result.duplicate ? ' (already void)' : ''}`,
+    );
+    return { outcome: 'released', salesOrder: result.so_number };
+  } catch (error) {
+    const inventoryError =
+      error instanceof InventoryError ? error : new InventoryError((error as Error).message);
+
+    // The warehouse has never heard of it. Nothing is committed there, so there
+    // is nothing to release and no point asking again.
+    if (inventoryError.status === 404) {
+      orders.setInventoryVoidStatus(order.id, 'released', null);
+      return { outcome: 'nothing_to_release' };
+    }
+
+    // Too far along to void. A person has to decide between a return and a
+    // credit note, so this stops here and says so rather than retrying forever.
+    if (inventoryError.status === 409) {
+      orders.setInventoryVoidStatus(order.id, 'refused', inventoryError.message);
+      console.warn(`Cannot void ${order.reference}: ${inventoryError.message}`);
+      return { outcome: 'refused', reason: inventoryError.message };
+    }
+
+    orders.setInventoryVoidStatus(order.id, 'pending', inventoryError.message);
+    console.warn(`Could not release ${order.reference} yet: ${inventoryError.message}`);
+    return { outcome: 'retry', reason: inventoryError.message };
+  }
+}
+
+/**
+ * Marks a cancelled order as needing its stock released, and tries once now.
+ *
+ * Orders the warehouse never received are marked `none`: they committed nothing
+ * there, so there is nothing to give back.
+ */
+export function queueVoid(order: Order): void {
+  if (!inventoryConfigured || order.inventoryStatus !== 'sent') {
+    orders.setInventoryVoidStatus(order.id, 'none');
+    return;
+  }
+  orders.setInventoryVoidStatus(order.id, 'pending');
+  void attemptVoid(order);
+}
+
+/** Retries every cancelled order still holding stock. Runs on the worker's tick. */
+export async function drainVoids(): Promise<void> {
+  if (!inventoryConfigured) return;
+
+  const due = orders.dueVoids();
+  if (due.length === 0) return;
+
+  console.info(`Releasing stock for ${due.length} cancelled order(s)…`);
+  for (const order of due) await attemptVoid(order);
+}
+
 /** How many order references one status request may carry, matching the cap at the other end. */
 const STATUS_BATCH_SIZE = 200;
 
@@ -219,9 +304,11 @@ export function startInventoryWorker(): void {
 
   setTimeout(() => {
     void drainQueue();
+    void drainVoids();
     void syncOrderStatuses();
     setInterval(() => {
       void drainQueue();
+      void drainVoids();
       void syncOrderStatuses();
     }, intervalMs).unref();
   }, 30_000).unref();

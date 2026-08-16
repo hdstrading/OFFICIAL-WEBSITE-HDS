@@ -216,6 +216,11 @@ addColumn('orders', 'inventory_next_try', 'TEXT');
 // stored totals already reflect that — a default of 0 keeps them arithmetically
 // intact rather than making an old order look as though a fee went missing.
 addColumn('orders', 'processing_fee', 'REAL NOT NULL DEFAULT 0');
+// Whether a cancelled order's sales order has been voided, releasing the stock
+// it had committed. Tracked separately from the push: an order can be delivered
+// to the warehouse successfully and still need releasing later, and conflating
+// the two would mean cancelling an order re-opened its push state.
+addColumn('orders', 'inventory_void_status', "TEXT NOT NULL DEFAULT 'none'");
 
 /**
  * Orders that predate the link are marked as skipped, not pending.
@@ -935,6 +940,7 @@ type OrderRow = {
   created_at: string;
   paid_at: string | null;
   inventory_status: string;
+  inventory_void_status: string;
   inventory_ref: string | null;
   inventory_error: string | null;
   inventory_attempts: number;
@@ -968,6 +974,7 @@ const toOrder = (r: OrderRow): Order => ({
   createdAt: r.created_at,
   paidAt: r.paid_at,
   inventoryStatus: (r.inventory_status ?? 'pending') as Order['inventoryStatus'],
+  inventoryVoidStatus: (r.inventory_void_status ?? 'none') as Order['inventoryVoidStatus'],
   inventoryRef: r.inventory_ref,
   inventoryError: r.inventory_error,
   inventoryAttempts: r.inventory_attempts ?? 0,
@@ -1164,12 +1171,52 @@ export const orders = {
         .all() as OrderRow[]
     ).map(toOrder);
   },
-  inventoryCounts(): { pending: number; failed: number; sent: number } {
+  /* ---------------------------------------------- releasing cancelled stock */
+
+  /**
+   * Cancelled orders whose sales order still holds stock.
+   *
+   * Only those actually delivered to the warehouse: an order it never received
+   * committed nothing there, so there is nothing to release and asking would
+   * only produce a 404 every few minutes.
+   */
+  dueVoids(limit = 25): Order[] {
+    return (
+      db
+        .prepare(
+          `SELECT * FROM orders
+            WHERE order_status = 'cancelled'
+              AND inventory_status = 'sent'
+              AND inventory_void_status = 'pending'
+            ORDER BY created_at
+            LIMIT ?`,
+        )
+        .all(limit) as OrderRow[]
+    ).map(toOrder);
+  },
+  setInventoryVoidStatus(id: string, status: Order['inventoryVoidStatus'], message?: string | null) {
+    db.prepare(
+      `UPDATE orders
+          SET inventory_void_status = ?,
+              inventory_error = COALESCE(?, inventory_error)
+        WHERE id = ?`,
+    ).run(status, message ?? null, id);
+  },
+  inventoryCounts(): { pending: number; failed: number; sent: number; voidsPending: number } {
     const rows = db
       .prepare('SELECT inventory_status AS status, COUNT(*) AS n FROM orders GROUP BY inventory_status')
       .all() as { status: string; n: number }[];
     const get = (status: string) => rows.find((r) => r.status === status)?.n ?? 0;
-    return { pending: get('pending'), failed: get('failed'), sent: get('sent') };
+    const voidsPending = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM orders
+            WHERE order_status = 'cancelled' AND inventory_status = 'sent'
+              AND inventory_void_status = 'pending'`,
+        )
+        .get() as { n: number }
+    ).n;
+    return { pending: get('pending'), failed: get('failed'), sent: get('sent'), voidsPending };
   },
 
   count(): number {

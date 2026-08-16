@@ -182,6 +182,8 @@ export interface Order {
   discountAmount: number;
   deliveryFee: number;
   vat: number;
+  /** The payment gateway's cut, passed on. Zero for bank deposit and COD. */
+  processingFee: number;
   total: number;
   createdAt: string;
   paidAt?: string | null;
@@ -189,10 +191,17 @@ export interface Order {
   inventoryRef?: string | null;
   inventoryError?: string | null;
   inventoryAttempts: number;
+  inventoryVoidStatus: InventoryVoidStatus;
 }
 
 /** Whether an order has reached the inventory system as a sales order. */
 export type InventoryPushStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+/**
+ * Whether a cancellation released the stock the sales order was holding.
+ * `refused` means the goods had already gone — a return or credit note is owed.
+ */
+export type InventoryVoidStatus = 'none' | 'pending' | 'released' | 'refused';
 
 export type BookingStatus = 'Confirmed' | 'Pending Callback' | 'Completed' | 'Cancelled';
 

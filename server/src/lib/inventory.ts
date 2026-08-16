@@ -20,6 +20,14 @@ export class InventoryError extends Error {
     message: string,
     /** False when retrying could plausibly succeed — a timeout, a 5xx, a restart. */
     readonly permanent = false,
+    /**
+     * The HTTP status, when the request got as far as a reply. Undefined for a
+     * timeout or an unreachable host. Callers that need to tell one refusal from
+     * another — a 404 "no such order" from a 409 "too late to void" — read this
+     * rather than matching on the message text, which is the inventory system's
+     * to reword.
+     */
+    readonly status?: number,
   ) {
     super(message);
     this.name = 'InventoryError';
@@ -82,6 +90,7 @@ export async function call<T>(path: string, init?: RequestInit): Promise<T> {
           'Check the SKU on each product matches an item there.'
         : detail,
       permanent,
+      response.status,
     );
   }
 

@@ -198,12 +198,36 @@ function OrdersTab({ onError }: ErrorHandler) {
 
   useEffect(load, [load]);
 
-  async function update(id: string, data: { orderStatus?: string; paymentStatus?: string }) {
+  async function update(
+    id: string,
+    data: { orderStatus?: string; paymentStatus?: string; force?: boolean },
+  ) {
     setBusy(id);
     try {
       await adminApi.updateOrderStatus(id, data);
       load();
     } catch (err) {
+      // The warehouse refuses to cancel an order it has already packed or
+      // shipped, because the stock cannot come back. Rather than a dead end,
+      // offer the override — but say plainly what it does and does not do, so
+      // nobody clicks through it expecting the stock to return.
+      const refusal = err as { needsForce?: boolean; message?: string };
+      if (refusal?.needsForce) {
+        const proceed = window.confirm(
+          `${refusal.message ?? 'The warehouse cannot cancel this order.'}\n\n` +
+            'Cancelling here anyway will NOT release the stock — the goods have already ' +
+            'left the shelf. Raise a return or a credit note in the inventory system as well.\n\n' +
+            'Cancel the order on the website anyway?',
+        );
+        if (proceed) {
+          await adminApi
+            .updateOrderStatus(id, { ...data, force: true })
+            .then(load)
+            .catch(onError);
+        }
+        setBusy(null);
+        return;
+      }
       onError(err);
     } finally {
       setBusy(null);

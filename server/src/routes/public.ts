@@ -272,6 +272,7 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
       // is payable now or waiting on the gateway.
       inventoryStatus: 'pending',
       inventoryAttempts: 0,
+      inventoryVoidStatus: 'none',
     };
 
     orders.insert(order);

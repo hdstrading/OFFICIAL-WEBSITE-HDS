@@ -68,6 +68,12 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly fields: Record<string, string> = {},
+    /**
+     * Set when the server refused an action that the operator may still override
+     * deliberately — cancelling an order the warehouse has already shipped. The
+     * caller offers the override; it is never applied automatically.
+     */
+    readonly needsForce = false,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -102,11 +108,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const payload = body as { error?: string; fields?: Record<string, string> };
+    const payload = body as {
+      error?: string;
+      fields?: Record<string, string>;
+      needsForce?: boolean;
+    };
     throw new ApiError(
       payload.error ?? 'Something went wrong. Please try again.',
       response.status,
       payload.fields ?? {},
+      Boolean(payload.needsForce),
     );
   }
 
@@ -265,7 +276,7 @@ export const adminApi = {
       depositsOutstanding: number;
       reviews: number;
       pendingReviews: number;
-      inventory: { pending: number; failed: number; sent: number };
+      inventory: { pending: number; failed: number; sent: number; voidsPending: number };
     }>('/admin/stats'),
 
   products: () => request<{ products: Product[] }>('/admin/products'),
@@ -285,7 +296,10 @@ export const adminApi = {
   deleteDiscount: (id: string) => del<{ ok: true }>(`/admin/discounts/${encodeURIComponent(id)}`),
 
   orders: () => request<{ orders: Order[] }>('/admin/orders'),
-  updateOrderStatus: (id: string, data: { orderStatus?: string; paymentStatus?: string }) =>
+  updateOrderStatus: (
+    id: string,
+    data: { orderStatus?: string; paymentStatus?: string; force?: boolean },
+  ) =>
     patch<{ order: Order }>(`/admin/orders/${encodeURIComponent(id)}/status`, data),
   dispatchOrder: (id: string) =>
     post<{ order: Order }>(`/admin/orders/${encodeURIComponent(id)}/dispatch`, {}),
@@ -313,7 +327,7 @@ export const adminApi = {
   inventoryBacklog: () =>
     request<{
       configured: boolean;
-      counts: { pending: number; failed: number; sent: number };
+      counts: { pending: number; failed: number; sent: number; voidsPending: number };
       orders: Order[];
     }>('/admin/inventory/backlog'),
   inventoryPing: () =>
@@ -323,7 +337,7 @@ export const adminApi = {
   retryInventoryPush: (id: string) =>
     post<{ order: Order }>(`/admin/inventory/orders/${encodeURIComponent(id)}/retry`, {}),
   drainInventoryQueue: () =>
-    post<{ counts: { pending: number; failed: number; sent: number }; orders: Order[] }>(
+    post<{ counts: { pending: number; failed: number; sent: number; voidsPending: number }; orders: Order[] }>(
       '/admin/inventory/drain',
       {},
     ),

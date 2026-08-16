@@ -15,7 +15,7 @@ import {
 import { currentAdmin, endSession, requireAdmin, startSession, verifyCredentials } from '../auth.js';
 import { bookLalamoveDelivery } from '../lib/delivery.js';
 import { ping as inventoryPing, InventoryError } from '../lib/inventory.js';
-import { drainQueue, retryPush } from '../lib/inventory-queue.js';
+import { attemptVoid, drainQueue, queueVoid, retryPush } from '../lib/inventory-queue.js';
 import { syncCatalog } from '../lib/inventory-catalog.js';
 import { inventoryConfigured } from '../env.js';
 import { newId } from '../lib/pricing.js';
@@ -230,13 +230,19 @@ adminRouter.delete('/discounts/:id', (req, res) => {
 
 adminRouter.get('/orders', (_req, res) => res.json({ orders: orders.all() }));
 
-adminRouter.patch('/orders/:id/status', (req, res) => {
+adminRouter.patch('/orders/:id/status', async (req, res) => {
   const parsed = z
     .object({
       orderStatus: z
         .enum(['pending_payment', 'processing', 'ready_for_dispatch', 'in_transit', 'delivered', 'cancelled'])
         .optional(),
       paymentStatus: z.enum(['unpaid', 'awaiting_payment', 'paid', 'failed', 'refunded']).optional(),
+      /**
+       * Cancel here even though the warehouse has already packed or shipped the
+       * goods. Deliberately explicit: the stock does not come back, and somebody
+       * still has to raise a return or a credit note.
+       */
+      force: z.boolean().optional(),
     })
     .safeParse(req.body);
 
@@ -244,10 +250,36 @@ adminRouter.patch('/orders/:id/status', (req, res) => {
     res.status(400).json({ error: 'Please provide a valid status.' });
     return;
   }
-  if (!orders.byId(req.params.id)) {
+  const existing = orders.byId(req.params.id);
+  if (!existing) {
     res.status(404).json({ error: 'That order no longer exists.' });
     return;
   }
+
+  // CANCELLING IS ASKED OF THE WAREHOUSE FIRST, and only recorded here if it
+  // agrees. A sales order that has been packed or shipped cannot be voided —
+  // the goods are gone — and marking the order cancelled here regardless would
+  // tell the customer their order was cancelled while it sat in a van, with the
+  // stock still committed and nobody aware a credit note was needed.
+  //
+  // Only when the inventory system is *unreachable* do we cancel anyway: an
+  // outage there must not stop staff cancelling an order. The release is queued
+  // and the worker keeps trying.
+  const isCancelling = parsed.data.orderStatus === 'cancelled' && existing.orderStatus !== 'cancelled';
+  if (isCancelling && inventoryConfigured && existing.inventoryStatus === 'sent' && !parsed.data.force) {
+    const result = await attemptVoid(existing);
+    if (result.outcome === 'refused') {
+      res.status(409).json({
+        error:
+          `The warehouse cannot cancel this order: ${result.reason} ` +
+          'Raise a return or a credit note in the inventory system, then cancel here with Force.',
+        needsForce: true,
+        reason: result.reason,
+      });
+      return;
+    }
+  }
+
   // `markPaid` also advances the order out of pending_payment and stamps paid_at,
   // which a bare status write would skip.
   if (parsed.data.paymentStatus === 'paid') {
@@ -256,6 +288,13 @@ adminRouter.patch('/orders/:id/status', (req, res) => {
     orders.setPaymentStatus(req.params.id, parsed.data.paymentStatus);
   }
   if (parsed.data.orderStatus) orders.setOrderStatus(req.params.id, parsed.data.orderStatus);
+
+  if (isCancelling) {
+    // Re-read: the void above may already have marked it released, and a forced
+    // cancellation still needs its state recorded rather than left at 'none'.
+    const cancelled = orders.byId(req.params.id);
+    if (cancelled && cancelled.inventoryVoidStatus === 'none') queueVoid(cancelled);
+  }
 
   res.json({ order: orders.byId(req.params.id) });
 });

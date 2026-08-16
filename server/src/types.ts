@@ -287,7 +287,17 @@ export interface Order {
   /** Why the last attempt failed, shown to staff so they can act on it. */
   inventoryError?: string | null;
   inventoryAttempts: number;
+  /** Whether a cancellation has released the stock the sales order committed. */
+  inventoryVoidStatus: InventoryVoidStatus;
 }
+
+/**
+ * `none` covers every order that has not been cancelled, and cancelled ones the
+ * warehouse never received. `refused` means it has gone too far to void — the
+ * goods have been packed or shipped — and needs a credit note or a return, both
+ * of which are somebody's decision rather than an API call's.
+ */
+export type InventoryVoidStatus = 'none' | 'pending' | 'released' | 'refused';
 
 /**
  * `skipped` covers orders placed while the link was switched off or

@@ -14,7 +14,7 @@ import { Alert, Badge, Button, Spinner } from '../../components/ui';
  */
 export default function InventoryLink({ onError }: { onError: (err: unknown) => void }) {
   const [configured, setConfigured] = useState(true);
-  const [counts, setCounts] = useState({ pending: 0, failed: 0, sent: 0 });
+  const [counts, setCounts] = useState({ pending: 0, failed: 0, sent: 0, voidsPending: 0 });
   const [backlog, setBacklog] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -121,17 +121,20 @@ export default function InventoryLink({ onError }: { onError: (err: unknown) => 
         </Alert>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           ['Waiting to send', counts.pending, 'Will go automatically'],
           ['Needs attention', counts.failed, 'Retry after fixing the cause'],
           ['In the warehouse', counts.sent, 'Became sales orders'],
+          ['Stock to release', counts.voidsPending, 'Cancelled, warehouse not reached yet'],
         ].map(([label, value, note]) => (
           <div key={label as string} className="rounded-2xl border border-slate-200 bg-white p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
             <p
               className={`mt-1.5 text-2xl font-extrabold ${
-                label === 'Needs attention' && (value as number) > 0 ? 'text-red-700' : 'text-slate-900'
+                (label === 'Needs attention' || label === 'Stock to release') && (value as number) > 0
+                  ? 'text-red-700'
+                  : 'text-slate-900'
               }`}
             >
               {value as number}
