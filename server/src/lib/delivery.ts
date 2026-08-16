@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { env, lalamoveConfigured, transportifyConfigured } from '../env.js';
+import { env, lalamoveConfigured } from '../env.js';
 import { FREE_DELIVERY_THRESHOLD, money } from './pricing.js';
 import { geocodeAddress, type GeocodePrecision } from './geocode.js';
 import type { DeliveryAddress, DeliveryOption } from '../types.js';
@@ -259,44 +259,28 @@ function lalamoveIndicative(serviceCode: string, km: number): number {
 
 /* -------------------------------------------------------------- Transportify */
 
-/**
- * Transportify's booking API is issued per partner account. With a key we ask
- * for a live rate; without one we still show the option with an indicative
- * price and confirm the exact fee before dispatch.
+/*
+ * REMOVED, DELIBERATELY.
+ *
+ * There was a Transportify client here, written from assumption because their
+ * booking API is issued per partner account and is not published. It never
+ * produced a live rate — it could not, since nobody had checked the endpoint,
+ * the auth header or the payload against real documentation — so all it ever did
+ * was offer customers a vehicle this shop could not actually book through the
+ * website, at a price invented here.
+ *
+ * Speculative integration code is worse than none. It looks finished, it passes
+ * review by existing, and the day someone pastes in a key it fails in a way that
+ * looks like the key is wrong.
+ *
+ * To bring it back: get the partner documentation, then add a quote function
+ * beside lalamoveQuote and an option in quoteDeliveryOptions. The surrounding
+ * machinery — the option shape, the markup on live quotes, the pin precision
+ * rule — is provider-agnostic and needs no changes.
+ *
+ * `transportify` stays in the DeliveryProvider type: orders placed while it was
+ * offered still name it, and their history must keep rendering.
  */
-async function transportifyQuote(
-  destination: ResolvedDestination,
-): Promise<{ fee: number; quotationId?: string; live: boolean }> {
-  const indicative = money(430 + destination.km * 26);
-  if (!transportifyConfigured || !pinGoodEnoughForCourier(destination)) {
-    return { fee: indicative, live: false };
-  }
-
-  try {
-    const response = await fetch(`${env.transportify.baseUrl}/v1/bookings/price`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.transportify.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        service_type: 'L300_VAN',
-        stops: [
-          { latitude: env.warehouse.lat, longitude: env.warehouse.lng },
-          { latitude: destination.lat, longitude: destination.lng },
-        ],
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!response.ok) return { fee: indicative, live: false };
-    const body = (await response.json()) as { price?: number; quotation_id?: string };
-    if (!Number.isFinite(body.price)) return { fee: indicative, live: false };
-    return { fee: money(body.price as number), quotationId: body.quotation_id, live: true };
-  } catch (error) {
-    console.warn('Transportify quotation unavailable:', (error as Error).message);
-    return { fee: indicative, live: false };
-  }
-}
 
 /* -------------------------------------------------------------------- public */
 
@@ -347,25 +331,7 @@ export async function quoteDeliveryOptions(
     }),
   );
 
-  const transportify = await transportifyQuote(destination);
-
-  return [
-    inHouseOption(subtotal, km),
-    pickupOption(),
-    ...lalamoveOptions,
-    {
-      provider: 'transportify',
-      serviceCode: 'L300_VAN',
-      label: 'Transportify L300 Van',
-      description: transportify.live
-        ? 'Bulk deliveries with loading crew available.'
-        : 'Bulk deliveries with loading crew. Indicative rate — confirmed before dispatch.',
-      fee: transportify.live ? withCourierMargin(transportify.fee) : transportify.fee,
-      etaLabel: 'Same day or scheduled',
-      isLiveQuote: transportify.live && !estimated,
-      quotationId: transportify.quotationId,
-    },
-  ];
+  return [inHouseOption(subtotal, km), pickupOption(), ...lalamoveOptions];
 }
 
 /**

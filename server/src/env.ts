@@ -145,7 +145,7 @@ export const env = {
    * Google Geocoding, used to turn a typed address into coordinates.
    *
    * The couriers price on coordinates, not on address strings, so without this
-   * every Lalamove and Transportify figure is an estimate from our own distance
+   * every Lalamove figure is an estimate from our own distance
    * table however valid their API keys are. Results are cached in the database,
    * so the same barangay is only ever paid for once.
    */
@@ -330,4 +330,9 @@ export const lalamoveConfigured = Boolean(env.lalamove.apiKey && env.lalamove.ap
  * wonder why prices are still estimates after they pasted their keys in.
  */
 export const liveCourierQuotesPossible = geocodingConfigured && lalamoveConfigured;
+/**
+ * Kept so the setting is still reported by the staff portal's integration
+ * panel, but nothing reads it to make a decision: the Transportify client was
+ * removed because it was written from assumption rather than documentation.
+ */
 export const transportifyConfigured = Boolean(env.transportify.apiKey);

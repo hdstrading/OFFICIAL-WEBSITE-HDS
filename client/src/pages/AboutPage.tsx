@@ -82,7 +82,7 @@ export default function AboutPage() {
                 ],
                 [
                   'Delivery that suits the job',
-                  'Our own fleet for scheduled and bulk runs — free over ₱5,000 — plus Lalamove and Transportify when you need something the same afternoon.',
+                  'Our own fleet for scheduled and bulk runs — free over ₱5,000 — plus Lalamove when you need something the same afternoon.',
                 ],
                 [
                   'Payment on your terms',

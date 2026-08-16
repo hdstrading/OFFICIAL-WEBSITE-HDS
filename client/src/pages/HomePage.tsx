@@ -49,7 +49,7 @@ const TRUST_POINTS = [
   {
     icon: Truck,
     title: 'Delivery that fits your schedule',
-    body: 'Our own fleet, plus Lalamove and Transportify for same-day runs. Free delivery on our fleet over ₱5,000.',
+    body: 'Our own fleet, plus Lalamove for same-day runs. Free delivery on our fleet over ₱5,000.',
   },
   {
     icon: CreditCard,
@@ -131,7 +131,7 @@ export default function HomePage() {
             <dl className="mt-10 flex flex-wrap gap-x-10 gap-y-4 text-sm">
               {[
                 ['Free delivery', 'On our fleet over ₱5,000'],
-                ['Same-day dispatch', 'Via Lalamove & Transportify'],
+                ['Same-day dispatch', 'Via Lalamove'],
                 ['Mon – Sat', '8:00 AM – 6:00 PM'],
               ].map(([term, detail]) => (
                 <div key={term}>

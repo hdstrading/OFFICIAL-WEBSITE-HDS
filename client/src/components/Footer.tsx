@@ -4,7 +4,7 @@ import { SITE, telHref } from '../config/site';
 
 /** Payment and courier logos are shown as words — no third-party assets to load. */
 const PAYMENT_METHODS = ['Visa', 'Mastercard', 'GCash', 'Maya', 'Bank transfer', 'Cash on delivery'];
-const COURIERS = ['HDS own fleet', 'Lalamove', 'Transportify'];
+const COURIERS = ['HDS own fleet', 'Lalamove'];
 
 export default function Footer() {
   const year = new Date().getFullYear();

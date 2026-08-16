@@ -202,8 +202,7 @@ export default function ProductDetailPage() {
               <ul className="mt-5 space-y-2 text-xs text-slate-600">
                 <li className="flex gap-2">
                   <Truck className="h-4 w-4 shrink-0 text-cyan-700" aria-hidden />
-                  Free delivery on our own fleet for orders over ₱5,000, or same-day via Lalamove and
-                  Transportify.
+                  Free delivery on our own fleet for orders over ₱5,000, or same-day via Lalamove.
                 </li>
                 <li className="flex gap-2">
                   <ShieldCheck className="h-4 w-4 shrink-0 text-cyan-700" aria-hidden />
