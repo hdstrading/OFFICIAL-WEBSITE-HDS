@@ -14,9 +14,18 @@ export const money = (value: number) => Math.round(value * 100) / 100;
 
 export function generateReference(prefix: 'ORD' | 'QT' | 'BK'): string {
   const year = new Date().getFullYear();
-  // 6 random base32 characters: short enough to read over the phone, long
-  // enough that references cannot be guessed or enumerated.
-  const suffix = crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 6);
+  /**
+   * The reference is a capability, not just a label: anyone holding it can read
+   * that order's name, phone number and delivery address, because that is what
+   * makes an emailed tracking link work without an account.
+   *
+   * Six hex characters is 24 bits — about 17 million, which sounds ample until
+   * you consider that a guess only has to hit *any* order, so the odds improve
+   * with every sale. Ten characters is 40 bits, a million times harder, and
+   * still short enough to read down a phone. Existing references keep working;
+   * this only applies to new ones.
+   */
+  const suffix = crypto.randomBytes(5).toString('hex').toUpperCase().slice(0, 10);
   return `HDS-${prefix}-${year}-${suffix}`;
 }
 

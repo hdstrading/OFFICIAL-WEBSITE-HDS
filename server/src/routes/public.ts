@@ -70,6 +70,27 @@ const writeLimiter = rateLimit({
   message: { error: 'Too many requests. Please wait a few minutes and try again.' },
 });
 
+/**
+ * Guards the lookup-by-reference routes.
+ *
+ * An order, quotation or booking is fetched with nothing but its reference —
+ * that is what makes the emailed tracking link work without an account — so the
+ * reference is the only thing standing between a stranger and a customer's name,
+ * phone number and home address. Unthrottled, those references can simply be
+ * enumerated until one lands.
+ *
+ * Deliberately tighter than the quoting limit: a person checking their own order
+ * refreshes it a handful of times, whereas anything doing it hundreds of times
+ * is doing something else.
+ */
+const lookupLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many lookups. Please wait a few minutes and try again.' },
+});
+
 const quoteLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 12,
@@ -272,6 +293,22 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
       return;
     }
 
+    // Stock is taken here, immediately before the order is written, and taken
+    // atomically. Checking availability during pricing is not enough on its own:
+    // nothing wrote the figure back, so the same units could be sold repeatedly
+    // until the next catalogue sync corrected the mirror.
+    const reserved = products.reserveStock(priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity })));
+    if (!reserved.ok) {
+      res.status(409).json({
+        error:
+          reserved.available <= 0
+            ? `${reserved.name} sold out while you were checking out. Please remove it and try again.`
+            : `Only ${reserved.available} of ${reserved.name} are left. Please reduce the quantity and try again.`,
+        fields: { items: 'Please adjust your cart.' },
+      });
+      return;
+    }
+
     const order: Order = {
       id: newId(),
       reference: generateReference('ORD'),
@@ -349,7 +386,7 @@ publicRouter.post('/orders', writeLimiter, async (req, res, next) => {
 });
 
 /** Order status lookup. The reference is unguessable, so it acts as the key. */
-publicRouter.get('/orders/:reference', (req, res) => {
+publicRouter.get('/orders/:reference', lookupLimiter, (req, res) => {
   const order = orders.byReference(req.params.reference);
   if (!order) {
     res.status(404).json({ error: 'We could not find that order reference.' });
@@ -406,7 +443,7 @@ publicRouter.post('/quotes', writeLimiter, (req, res, next) => {
   }
 });
 
-publicRouter.get('/quotes/:reference', (req, res) => {
+publicRouter.get('/quotes/:reference', lookupLimiter, (req, res) => {
   const quote = quotes.byReference(req.params.reference);
   if (!quote) {
     res.status(404).json({ error: 'We could not find that quotation reference.' });
@@ -530,7 +567,7 @@ publicRouter.post('/bookings', writeLimiter, async (req, res, next) => {
   }
 });
 
-publicRouter.get('/bookings/:reference', (req, res) => {
+publicRouter.get('/bookings/:reference', lookupLimiter, (req, res) => {
   const booking = bookings.byReference(req.params.reference);
   if (!booking) {
     res.status(404).json({ error: 'We could not find that booking reference.' });

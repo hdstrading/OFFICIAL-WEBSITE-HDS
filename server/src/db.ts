@@ -501,6 +501,71 @@ export const products = {
     return db.prepare('DELETE FROM products WHERE id = ?').run(id).changes > 0;
   },
   /** Written only by the catalog sync — never by the admin product form. */
+  /**
+   * Takes stock for an order, atomically, or takes none of it.
+   *
+   * The check in `priceCart` reads the stock figure and nothing writes it back,
+   * so before this existed the same three tins could be sold over and over until
+   * the next catalogue sync — not only under concurrency, but to three customers
+   * queuing politely one after another. Measured: six orders of two units each,
+   * against a stock of three, all six accepted.
+   *
+   * The guard is the `stock_available >= ?` in the UPDATE rather than a read
+   * followed by a write. SQLite applies it while holding the write lock, so two
+   * requests cannot both see the last unit. The whole set of lines runs in one
+   * transaction: an order that cannot be filled completely reserves nothing,
+   * because a half-reserved order is stock removed from sale for goods nobody
+   * has bought.
+   *
+   * This mirror is not the authority — the inventory system is — so it does not
+   * need to be perfect, only monotonic between syncs. The next sync overwrites
+   * it with the warehouse's own figure, which is what corrects for cancellations,
+   * counter sales and anything else that happened elsewhere.
+   */
+  reserveStock(
+    lines: { productId: string; quantity: number }[],
+  ): { ok: true } | { ok: false; name: string; available: number } {
+    const take = db.prepare(
+      `UPDATE products
+          SET stock_available = stock_available - @quantity
+        WHERE id = @id
+          AND stock_tracked = 1
+          AND stock_available IS NOT NULL
+          AND stock_available >= @quantity`,
+    );
+
+    let failure: { name: string; available: number } | null = null;
+
+    const run = db.transaction((requested: { productId: string; quantity: number }[]) => {
+      for (const line of requested) {
+        const row = db
+          .prepare('SELECT name, stock_tracked, stock_available FROM products WHERE id = ?')
+          .get(line.productId) as
+          | { name: string; stock_tracked: number; stock_available: number | null }
+          | undefined;
+
+        // Untracked items are not counted by the business at all, so there is
+        // nothing to reserve and nothing to run out of.
+        if (!row || !row.stock_tracked || row.stock_available === null) continue;
+
+        const changed = take.run({ id: line.productId, quantity: line.quantity }).changes;
+        if (changed === 0) {
+          failure = { name: row.name, available: row.stock_available };
+          // Throwing is what rolls the earlier lines back.
+          throw new Error('insufficient stock');
+        }
+      }
+    });
+
+    try {
+      run(lines);
+      return { ok: true };
+    } catch (error) {
+      if (failure) return { ok: false, ...(failure as { name: string; available: number }) };
+      throw error;
+    }
+  },
+
   setInventoryState(id: string, listed: boolean, tracked: boolean, available: number | null) {
     db.prepare(
       `UPDATE products

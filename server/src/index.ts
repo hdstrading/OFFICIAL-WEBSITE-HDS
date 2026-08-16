@@ -154,6 +154,33 @@ app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
+/* ------------------------------------------------------------ last resort */
+
+/**
+ * A rejected promise nobody caught must not close the shop.
+ *
+ * Node treats an unhandled rejection as fatal. Most of ours come from
+ * background work — a retry timer, a status poll, an email — none of which is
+ * worth taking the site down for, and all of which try again on the next tick.
+ * So these are logged loudly and the process carries on serving customers.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection (continuing):', reason);
+});
+
+/**
+ * An uncaught exception is different, and is not survivable in the same way.
+ *
+ * It means a synchronous path threw somewhere nobody expected, leaving state
+ * we cannot reason about. Logging and exiting is the honest response: systemd
+ * restarts within seconds, and a clean restart beats a process running on
+ * assumptions that have already proved false.
+ */
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception — exiting so the service restarts cleanly:', error);
+  process.exit(1);
+});
+
 /* -------------------------------------------------------------------- start */
 
 seedIfEmpty();

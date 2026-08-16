@@ -23,7 +23,8 @@
     "backup:list": "node scripts/backup-db.mjs --list",
     "restore": "node scripts/restore-db.mjs",
     "test:geocode": "npm run build --workspace server && node server/test/geocode.test.mjs",
-    "test:couriers": "npm run build --workspace server && node server/test/geocode.test.mjs && node server/test/reverse-geocode.test.mjs && node server/test/courier-markup.test.mjs"
+    "test:couriers": "npm run test",
+    "test": "npm run build --workspace server && node server/test/geocode.test.mjs && node server/test/reverse-geocode.test.mjs && node server/test/courier-markup.test.mjs && node server/test/stock-reservation.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

@@ -210,7 +210,9 @@ export function queueVoid(order: Order): void {
     return;
   }
   orders.setInventoryVoidStatus(order.id, 'pending');
-  void attemptVoid(order);
+  void attemptVoid(order).catch((error) => {
+    console.error(`Unexpected error releasing ${order.reference}:`, error);
+  });
 }
 
 /** Retries every cancelled order still holding stock. Runs on the worker's tick. */
@@ -286,6 +288,21 @@ export async function syncOrderStatuses(): Promise<void> {
 }
 
 /**
+ * One tick of the background worker.
+ *
+ * Each task is caught individually and on purpose. A rejection escaping a timer
+ * callback is an unhandled rejection, which Node treats as fatal — so without
+ * this, a transient database or network error inside a five-minute timer takes
+ * the whole shop offline. None of these three is important enough to be worth
+ * that: they retry on the next tick anyway.
+ */
+function runWorkerPass(): void {
+  void drainQueue().catch((error) => console.error('Order push pass failed:', error));
+  void drainVoids().catch((error) => console.error('Stock release pass failed:', error));
+  void syncOrderStatuses().catch((error) => console.error('Status sync pass failed:', error));
+}
+
+/**
  * Starts the retry timer.
  *
  * The first run is delayed rather than immediate so a server restart during an
@@ -305,14 +322,8 @@ export function startInventoryWorker(): void {
   const intervalMs = Math.max(1, env.inventory.retryIntervalMinutes) * 60 * 1000;
 
   setTimeout(() => {
-    void drainQueue();
-    void drainVoids();
-    void syncOrderStatuses();
-    setInterval(() => {
-      void drainQueue();
-      void drainVoids();
-      void syncOrderStatuses();
-    }, intervalMs).unref();
+    runWorkerPass();
+    setInterval(runWorkerPass, intervalMs).unref();
   }, 30_000).unref();
 
   console.info(
@@ -335,7 +346,7 @@ export function startInventoryWorker(): void {
       }
     };
     setTimeout(() => {
-      void runSync();
+      void runSync().catch((error) => console.error('Catalog sync pass failed:', error));
       setInterval(() => void runSync(), syncMinutes * 60 * 1000).unref();
     }, 45_000).unref();
     console.info(`Catalog sync enabled (every ${syncMinutes} min).`);
