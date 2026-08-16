@@ -1,0 +1,31 @@
+# Schedules the nightly database backup.
+#
+# Install:
+#   sudo cp deploy/hdstradingopc-backup.service /etc/systemd/system/
+#   sudo cp deploy/hdstradingopc-backup.timer   /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hdstradingopc-backup.timer
+#
+# Check when it will next run:
+#   systemctl list-timers hdstradingopc-backup --no-pager
+
+[Unit]
+Description=Nightly backup of the HDS Trading OPC website database
+
+[Timer]
+# 02:15 Manila time. Chosen for the quietest hour: a backup during trading is
+# safe — the online backup API handles concurrent writes — but a quiet window
+# keeps it fast and keeps the snapshot free of half-finished checkouts.
+OnCalendar=*-*-* 02:15:00 Asia/Manila
+
+# The window a VPS is most likely to be off is the small hours, which is
+# exactly when this is scheduled. Without this, a reboot at 02:00 means that
+# night silently has no backup and nobody finds out.
+Persistent=true
+
+# Spread the start so a backup never begins at the same instant as anything
+# else scheduled on the hour.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

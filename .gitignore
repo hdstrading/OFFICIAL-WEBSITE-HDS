@@ -12,6 +12,10 @@ coverage/
 # SQLite database and its write-ahead log. This holds live customer orders;
 # back it up on the server, do not track it in git.
 server/data/
+# Database snapshots — customer records; never commit these.
+server/backups/
+*.db.gz
+*.db.replaced-*
 *.db
 *.db-shm
 *.db-wal

@@ -18,7 +18,10 @@
     "start": "npm run start --workspace server",
     "seed": "npm run seed --workspace server",
     "lint": "npm run lint --workspace client && npm run lint --workspace server",
-    "clean": "rm -rf client/dist server/dist node_modules/.cache"
+    "clean": "rm -rf client/dist server/dist node_modules/.cache",
+    "backup": "node scripts/backup-db.mjs",
+    "backup:list": "node scripts/backup-db.mjs --list",
+    "restore": "node scripts/restore-db.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
