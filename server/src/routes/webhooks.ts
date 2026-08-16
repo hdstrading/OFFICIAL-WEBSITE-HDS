@@ -149,6 +149,27 @@ function lalamoveTokenOk(req: Request, res: Response): boolean {
 }
 
 /**
+ * Says whether this integration is deployed and configured, without a token.
+ *
+ * Exists because the two failure modes are otherwise indistinguishable from
+ * outside: a route that has not been deployed yet and a token that does not
+ * match both answer 404, and an operator staring at one cannot tell which they
+ * have. Reaching this at all proves the code is present; `tokenConfigured`
+ * then separates "no token set on the server" from "wrong token in the URL".
+ *
+ * It reveals nothing worth protecting. That this website integrates with
+ * Lalamove is not a secret — the repository is the documentation — and no
+ * token, order or customer detail is reported.
+ */
+webhookRouter.get('/lalamove', (_req, res) => {
+  res.json({
+    deployed: true,
+    endpoint: 'lalamove',
+    tokenConfigured: Boolean(env.lalamove.webhookToken),
+  });
+});
+
+/**
  * Answers the Partner Portal's reachability check.
  *
  * Lalamove verifies a webhook URL before it will save it, and reports anything

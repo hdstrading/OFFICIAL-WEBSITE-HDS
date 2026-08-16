@@ -125,8 +125,29 @@ curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
 | Result | Cause |
 | --- | --- |
 | `503` | The route is deployed but `LALAMOVE_WEBHOOK_TOKEN` is not loaded — restart the service after editing `.env` |
-| `404` | Either the code is not deployed, or the token in the URL is not the one in `.env` |
+| `404` | Either the code is not deployed, or the token in the URL is not the one in `.env` — see below |
 | `200` | The endpoint is fine; look for nginx or DNS between Lalamove and the server |
+
+**Both 404 causes look identical in the status code, so read the body.** Drop
+the `-o /dev/null` and run it again:
+
+| Body | Cause |
+| --- | --- |
+| `{"error":"No API route matches POST /api/webhooks/lalamove/…"}` | The code is not deployed — pull, build and restart |
+| `{"error":"Not found."}` | Deployed, but the token in the URL is not the one in `.env` |
+
+Or ask the server directly, which needs no token:
+
+```
+curl -sS https://hdstradingopc.com/api/webhooks/lalamove
+```
+
+- Nothing at that path → not deployed.
+- `{"deployed":true,...,"tokenConfigured":false}` → deployed, but
+  `LALAMOVE_WEBHOOK_TOKEN` is blank or the service was not restarted after the
+  `.env` edit.
+- `{"deployed":true,...,"tokenConfigured":true}` → both fine, so the token in
+  the registered URL is wrong.
 
 The endpoint answers `GET` as well as `POST`, so a portal reachability check
 succeeds. The `GET` reports only that something is listening — never anything
