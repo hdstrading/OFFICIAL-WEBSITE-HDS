@@ -1,0 +1,49 @@
+# Takes a verified snapshot of the website database.
+#
+# Paired with hdstradingopc-backup.timer, which is what schedules it. Install
+# both — see deploy/BACKUPS.md.
+#
+# Run it once by hand to check it works:
+#   sudo systemctl start hdstradingopc-backup
+#   sudo journalctl -u hdstradingopc-backup -n 30 --no-pager
+
+[Unit]
+Description=Back up the HDS Trading OPC website database
+Documentation=https://github.com/hdstrading/OFFICIAL-WEBSITE-HDS/blob/main/deploy/BACKUPS.md
+After=network.target
+
+[Service]
+Type=oneshot
+User=hds
+Group=hds
+WorkingDirectory=/var/www/hdstradingopc
+
+# Reads DATABASE_FILE from the same file the site itself uses, so the backup
+# can never end up pointed at a different database than the one being served.
+EnvironmentFile=/var/www/hdstradingopc/.env
+Environment=NODE_ENV=production
+Environment=BACKUP_DIR=/var/backups/hdstradingopc
+
+ExecStart=/usr/bin/node scripts/backup-db.mjs
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hdstradingopc-backup
+
+# --- Hardening -------------------------------------------------------------
+# It reads the database and writes snapshots. Nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/hdstradingopc
+# Read-only access to the live database is enough — the backup opens it
+# readonly — but SQLite needs the directory writable to take a shared lock on
+# a WAL database, so the data directory is listed rather than the file.
+ReadWritePaths=/var/www/hdstradingopc/server/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true

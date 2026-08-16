@@ -1,0 +1,21 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+
+# Secrets — never commit these.
+.env*
+!.env.example
+
+# SQLite database and its write-ahead log. This holds live customer orders;
+# back it up on the server, do not track it in git.
+server/data/
+# Database snapshots — customer records; never commit these.
+server/backups/
+*.db.gz
+*.db.replaced-*
+*.db
+*.db-shm
+*.db-wal

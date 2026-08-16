@@ -1,0 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,700;0,800;0,900;1,700&family=Plus+Jakarta+Sans:ital,wght@0,500;0,600;1,500&family=Lato:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@405;605;705&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Lato", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Montserrat", sans-serif;
+  --font-subheader: "Plus Jakarta Sans", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+body {
+  font-family: "Lato", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Global Heading Overrides to adhere perfectly to standard corporate intent */
+h1:not(.font-mono), 
+h2:not(.font-mono), 
+h3:not(.font-mono), 
+.font-display {
+  font-family: "Montserrat", sans-serif;
+}
+
+h4:not(.font-mono), 
+h5:not(.font-mono), 
+h6:not(.font-mono), 
+.font-subheader {
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
