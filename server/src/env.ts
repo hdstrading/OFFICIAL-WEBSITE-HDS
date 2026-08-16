@@ -181,6 +181,22 @@ export const env = {
    */
   requireExactPin: bool(process.env.COURIER_REQUIRE_EXACT_PIN, false),
 
+  /**
+   * Margin added to a live courier quotation before the customer is charged.
+   *
+   * A courier's price is only firm for minutes, and the order is dispatched
+   * later — sometimes the next morning, once a bank deposit clears. Between
+   * those two moments the rate can move: surge at rush hour, a road route
+   * longer than the straight line, a waiting charge. Whatever it has become is
+   * what we pay, against a delivery fee that was fixed at checkout, and the
+   * difference comes out of the order's margin.
+   *
+   * Applied only to genuinely live quotations. The indicative table already
+   * carries its own margin, and marking that up as well would charge twice for
+   * the same risk.
+   */
+  courierQuoteMarkupPercent: Math.max(0, Number(process.env.COURIER_QUOTE_MARKUP_PERCENT ?? 15)),
+
   lalamove: {
     apiKey: process.env.LALAMOVE_API_KEY ?? '',
     apiSecret: process.env.LALAMOVE_API_SECRET ?? '',

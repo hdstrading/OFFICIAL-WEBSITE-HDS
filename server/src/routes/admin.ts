@@ -331,27 +331,33 @@ adminRouter.post('/orders/:id/dispatch', async (req, res) => {
   orders.setCourierBooking(order.id, result.booking.bookingRef, result.booking.trackingUrl);
   orders.setOrderStatus(order.id, 'in_transit');
 
-  // Surfaced rather than swallowed: the difference between what the customer
-  // paid for delivery and what the rider costs today comes out of this order's
-  // margin, and staff can only act on it if they are told.
+  // The customer's delivery fee carries a margin over the courier's quotation,
+  // precisely so a rate that moves between checkout and dispatch is absorbed.
+  // So the question worth reporting is not "did the price change" — it always
+  // changes a little — but "did the buffer hold". Only a shortfall is a warning;
+  // the rest is bookkeeping staff may want to see.
   const paid = order.deliveryFee;
-  const charged = result.booking.fee;
-  const drift = Math.round((charged - paid) * 100) / 100;
-  if (Math.abs(drift) >= 1) {
+  const courierCost = result.booking.fee;
+  const margin = Math.round((paid - courierCost) * 100) / 100;
+
+  if (margin < 0) {
     console.warn(
-      `Lalamove charged ${charged} for ${order.reference}, customer paid ${paid} (${drift > 0 ? '+' : ''}${drift}).`,
+      `Lalamove charged ${courierCost} for ${order.reference} but the customer paid ${paid} — ` +
+        `short by ${Math.abs(margin).toFixed(2)}. Consider raising COURIER_QUOTE_MARKUP_PERCENT.`,
     );
   }
 
   res.json({
     order: orders.byId(order.id),
-    courierFee: charged,
+    courierFee: courierCost,
     quotedFee: paid,
-    ...(Math.abs(drift) >= 1
+    margin,
+    ...(margin < 0
       ? {
           notice:
-            `Lalamove's price today is ${charged.toFixed(2)}, against the ${paid.toFixed(2)} ` +
-            `charged at checkout — a difference of ${drift > 0 ? '+' : ''}${drift.toFixed(2)}.`,
+            `Lalamove charged ${courierCost.toFixed(2)} but this order collected ` +
+            `${paid.toFixed(2)} for delivery — ${Math.abs(margin).toFixed(2)} short. ` +
+            'The buffer did not cover the surcharge on this one.',
         }
       : {}),
   });

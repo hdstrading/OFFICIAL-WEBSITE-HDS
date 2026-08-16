@@ -241,10 +241,23 @@ the same vehicle type and books the fresh quotation.
 
 Two consequences worth knowing:
 
-- **The price can move between checkout and dispatch** — surge pricing, or a
-  road route longer than the straight-line estimate. The response tells you what
-  Lalamove charged against what the customer paid, and the difference is logged.
-  It comes out of that order's margin, so it is worth watching for the first few.
+- **The price can move between checkout and dispatch** — surge at rush hour, a
+  road route longer than the straight line, a waiting charge. Whatever it has
+  become is what you pay, against a fee fixed at checkout. That is what
+  `COURIER_QUOTE_MARKUP_PERCENT` is for: live quotations are charged to the
+  customer with **15%** on top, and the gap absorbs the movement.
+
+  So the number worth watching is not whether the price changed — it always
+  changes a little — but whether the buffer held. Dispatch reports the margin,
+  and only a **shortfall** is raised as a warning:
+
+  ```
+  Lalamove charged 262 for HDS-ORD-… but the customer paid 230 — short by 32.
+  Consider raising COURIER_QUOTE_MARKUP_PERCENT.
+  ```
+
+  If that appears often, raise the percentage. If it never appears, you could
+  lower it and quote more keenly.
 - **An order already booked cannot be booked twice.** Pressing Dispatch again
   returns an error rather than sending a second rider.
 
@@ -279,6 +292,11 @@ failing request to every checkout.
 Once geocoding and Lalamove keys are in, place a test order to a real address
 and look at the delivery options. A live quote is one where the price is not a
 round number from the table below:
+
+Note that a live Lalamove price on the checkout page is the courier's quotation
+plus `COURIER_QUOTE_MARKUP_PERCENT`, so it will not match the figure you would
+see in the Lalamove app. That is deliberate — the difference is your buffer
+against a rate that moves before dispatch.
 
 | Indicative fallback | Base | Per km |
 | --- | --- | --- |

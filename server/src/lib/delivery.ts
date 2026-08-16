@@ -47,6 +47,16 @@ interface ResolvedDestination {
 const ASSUMED_KM = 18;
 
 /**
+ * The customer's price for a live courier quotation.
+ *
+ * The courier's own figure is what we will be billed; this is what we charge.
+ * The gap between them is the buffer that absorbs a rate that moves between
+ * checkout and dispatch, which otherwise comes straight out of the order.
+ */
+const withCourierMargin = (courierFee: number) =>
+  money(courierFee * (1 + env.courierQuoteMarkupPercent / 100));
+
+/**
  * Whether a resolved location is good enough to hand to a courier.
  *
  * An address that resolved to nothing never is — there is no pin at all, only
@@ -282,7 +292,9 @@ export async function quoteDeliveryOptions(
         description: live
           ? service.hint
           : `${service.hint}. Indicative rate — confirmed before dispatch.`,
-        fee: live ? live.fee : lalamoveIndicative(service.code, km),
+        // Marked up only when live. The indicative table already carries its
+        // own margin, and adding this on top would charge twice for one risk.
+        fee: live ? withCourierMargin(live.fee) : lalamoveIndicative(service.code, km),
         etaLabel: 'Same day, within hours',
         isLiveQuote: Boolean(live) && !estimated,
         quotationId: live?.quotationId,
@@ -303,7 +315,7 @@ export async function quoteDeliveryOptions(
       description: transportify.live
         ? 'Bulk deliveries with loading crew available.'
         : 'Bulk deliveries with loading crew. Indicative rate — confirmed before dispatch.',
-      fee: transportify.fee,
+      fee: transportify.live ? withCourierMargin(transportify.fee) : transportify.fee,
       etaLabel: 'Same day or scheduled',
       isLiveQuote: transportify.live && !estimated,
       quotationId: transportify.quotationId,
