@@ -81,6 +81,33 @@ export function CartProvider({
       .filter((item): item is CartItem => item !== null);
   }, [lines, products]);
 
+  /**
+   * Forgets items the catalog no longer has.
+   *
+   * Hiding them from the display was not enough. A delisted id stayed in
+   * localStorage, went to the server with every quote and checkout, and was
+   * rejected there — so the cart looked perfectly normal while every attempt to
+   * price it failed, and the advice to refresh could not possibly help because
+   * refreshing reloads the same stored id. Dropping it here is what actually
+   * ends that loop.
+   *
+   * Guarded on the catalog having loaded: an empty `products` means the request
+   * is still in flight, and pruning against it would empty every cart on a slow
+   * connection.
+   */
+  useEffect(() => {
+    if (products.length === 0) return;
+    setLines((prev) => {
+      const live = Object.fromEntries(
+        Object.entries(prev).filter(([id]) => products.some((p) => p.id === id)),
+      );
+      const dropped = Object.keys(prev).length - Object.keys(live).length;
+      if (dropped === 0) return prev;
+      console.info(`Removed ${dropped} item(s) from the cart that are no longer sold.`);
+      return live;
+    });
+  }, [products]);
+
   const add = useCallback((product: Product, quantity = 1) => {
     setLines((prev) => {
       const next = Math.min(10_000, (prev[product.id] ?? 0) + quantity);
@@ -121,7 +148,11 @@ export function CartProvider({
       clear,
       open: () => setIsOpen(true),
       close: () => setIsOpen(false),
-      toPayload: () => Object.entries(lines).map(([productId, quantity]) => ({ productId, quantity })),
+      // Built from `items`, not from `lines`: what is sent must be what the
+      // customer was shown. Reading the raw stored lines here is how a product
+      // that had vanished from the cart on screen still reached the server and
+      // failed the whole order.
+      toPayload: () => items.map(({ product, quantity }) => ({ productId: product.id, quantity })),
     }),
     [lines, items, isOpen, add, setQuantity, remove, clear],
   );

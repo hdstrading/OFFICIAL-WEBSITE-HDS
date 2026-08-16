@@ -59,8 +59,16 @@ export function priceCart(
   for (const line of requested) {
     const product = products.byId(line.productId);
     if (!product || !product.isListed) {
+      // Named where we can. "One of the items" leaves the customer guessing
+      // which, and leaves staff nothing to look up when they are asked about it.
+      // A product deleted outright has no name left to give, so that case says
+      // what will actually clear it — which "please refresh" never did, because
+      // the offending id lives in the browser's storage.
       throw new PricingError(
-        'One of the items in your list is no longer available. Please refresh and try again.',
+        product
+          ? `${product.name} is no longer available. Please remove it from your cart and try again.`
+          : 'An item in your cart is no longer sold. Emptying your cart and re-adding ' +
+            'what you want will clear it.',
       );
     }
     // Checked here rather than only in the browser: the cart may have been sat
